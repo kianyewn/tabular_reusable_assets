@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
 import optuna
+import numpy as np
 import time
 
 
@@ -188,8 +189,7 @@ stage_2_best_n_estimators
 
 stage_2_model_score = score_model(stage_2_model, X_val[feature_columns], y_val) 
 ## Stage 1 model score is actually higher than stage 2 model score here
-# stage_1_model_score, stage_2_model_score
-
+stage_1_model_score, stage_2_model_score
                          
 #########################
 ##### Final model #######
@@ -205,6 +205,44 @@ final_model_parameters.update({'learning_rate': lower_learning_rate})
 final_model_best_round = stage_2_best_n_estimators
 final_model = XGBClassifier(**final_model_parameters,
                             n_estimators = final_model_best_round)
+
+############################################################################
+###### K FOLD cross validation to have the proxy for test performance ######
+############################################################################
+from sklearn.base import clone
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from tqdm import tqdm
+kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=99)
+
+fold_info = {'fold_num':[],
+             'model_score':[],
+             'trained_model':[]}
+
+for i, (train_idx, oof_idx) in tqdm(enumerate(kfold.split(X_trainval, y_trainval))):
+    final_model_fold = clone(final_model)
+    
+    X_train_fold = X_trainval.loc[train_idx, :]
+    y_train_fold = y_trainval.loc[train_idx, :]
+    X_oof = X_trainval.loc[oof_idx,:]
+    y_oof = y_trainval.loc[oof_idx,:]
+    
+    final_model_fold.fit(X_train_fold, y_train_fold)
+    final_model_fold_score = score_model(final_model_fold, X_oof[feature_columns], y_oof)
+    fold_info['fold_num'].append(i)
+    fold_info['model_score'].append(final_model_fold_score)
+    fold_info['trained_model'].append(final_model_fold)    
+
+cross_val_model_score = np.mean(fold_info['model_score'])
+cross_val_model_score, stage_1_model_score # (0.8705717591456933, 0.9293807641633729)
+# It is posible that we overfitted to the validation dataset used for hyper-parameter tuning
+# Can include averaged kfold validation inside the optimization opjective in Optuna
+
+####################################
+##### TRAIN ON ENTIRE DATA SET #####
+####################################
+final_model = XGBClassifier(**final_model_parameters,
+                            n_estimators = final_model_best_round)
+
 final_model.fit(X_trainval, y_trainval)
 
 # Final score

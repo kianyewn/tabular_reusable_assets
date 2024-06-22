@@ -1,3 +1,4 @@
+# https://randomrealizations.com/posts/xgboost-parameter-tuning-with-optuna/#stage-2-intensify-the-boosting-parameters
 # !pip install optuna
 # !pip install optuna-integration
 import pandas as pd
@@ -128,6 +129,7 @@ while time.time() - tic < 300:
 ######################################################
 #######  ## Continue from previous study. ############
 ######################################################
+# https://optuna.readthedocs.io/en/stable/tutorial/20_recipes/001_rdb.html
 # 1. Save study
 # study_name = "example-study"  # Unique identifier of the study.
 # storage_name = "sqlite:///{}.db".format(study_name)

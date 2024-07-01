@@ -219,7 +219,9 @@ fold_info = {'fold_num':[],
              'trained_model':[]}
 
 for i, (train_idx, oof_idx) in tqdm(enumerate(kfold.split(X_trainval, y_trainval))):
-    final_model_fold = clone(final_model)
+    # final_model_fold = clone(final_model)
+    final_model_fold = XGBClassifier(**final_model_parameters, 
+                                     n_estiamtors = final_model_best_round)
     
     X_train_fold = X_trainval.loc[train_idx, :]
     y_train_fold = y_trainval.loc[train_idx, :]

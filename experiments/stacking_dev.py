@@ -208,6 +208,7 @@ meta_X_test = pd.DataFrame({'xgb_oof_pred': simple_blend_base1, 'rf_oof_pred': r
 X_test['xgb_oof_pred'] = simple_blend_base1
 X_test['rf_oof_pred'] = rf_blend_test_predictions
 meta_X_test = X_test
+coefs= []
 for fold in range(5):
     X_train_fold = X[X['fold']!=fold].reset_index(drop=True)
     X_val_fold = X[X['fold']==fold].reset_index(drop=True)
@@ -218,7 +219,6 @@ for fold in range(5):
     # meta_fold_model = Lasso(alpha=0.1) 
    
     meta_fold_model.fit(X_train, y_train)
-    
     # valid_score = score_model(meta_fold_model, X_val_fold[oof_model_pred_cols], X_val_fold[label])
     test_pred = meta_fold_model.predict_proba(meta_X_test[oof_model_pred_cols])[:,1]
     valid_pred = meta_fold_model.predict_proba(X_val_fold[oof_model_pred_cols])[:,1]
@@ -251,7 +251,7 @@ import scipy
 def neg_auc_score(coef, y_true, y1, y2):
     pred = coef[0] * y1 + coef[1] * y2
     return -roc_auc_score(y_true, y_score=pred)
-  
+ 
 initial_coef = [0.2, 0.3]
 roc_auc_score(X_test[label], 0.47 * X_test['xgb_oof_pred'] + 0.52 * X_test['rf_oof_pred'])
 # negated_auc_score  = neg_auc_score(coef, y_true=X[label], y1=X['xgb_oof_pred'], y2 = X['rf_oof_pred'])
@@ -260,110 +260,203 @@ best_coef = scipy.optimize.minimize(partial_loss, initial_coef, method='nelder-m
 
 best_coef
 
-neg_auc_score(best_coef.x, X_test[label], X_test['xgb_oof_pred'], X_test['rf_oof_pred'])
+neg_auc_score(best_coef.x, X_test[label], X_test['xgb_oof_pred'], X_test['rf_oof_pred']) # 0.91699
+
+# Averaged cofficients
+
+import np
 
 
 class OptimizedRounder_v2(object):
+    """https://www.kaggle.com/code/naveenasaithambi/optimizedrounder-improved"""
     def __init__(self):
         self.coef_ = 0
-    
-    def _kappa_loss(self, coef, X, y):
-        preds = pd.cut(X, [-np.inf] + list(np.sort(coef)) + [np.inf], labels = [0, 1, 2, 3, 4])
-        return -cohen_kappa_score(y, preds, weights = 'quadratic')
-    
-    def fit(self, X, y):
-        loss_partial = partial(self._kappa_loss, X = X, y = y)
-        initial_coef = [0.5, 1.5, 2.5, 3.5]
-        self.coef_ = sp.optimize.minimize(loss_partial, initial_coef, method = 'nelder-mead')
-    
-    def predict(self, X, coef):
-        preds = pd.cut(X, [-np.inf] + list(np.sort(coef)) + [np.inf], labels = [0, 1, 2, 3, 4])
-        return preds
-    
-    def coefficients(self):
-        return self.coef_['x']
-    
-    
-# Test blended model
-class StackingAveragedModels:
-    def __init__(self, base_models, meta_model, n_folds=5, add_original_features=False):
-        self.base_models = base_models
-        self.meta_model = meta_model
-        self.n_folds = n_folds
-        self.add_original_features = add_original_features
 
-    def get_oof_num(self, X, y):
-        kfold = KFold(n_splits = self.n_folds, shuffle=True, random_state=156)
-        all_data = pd.concat([X, y], axis=1)
-        all_data.loc[:, 'oof_num'] = 0
-        for idx, (train_idx, oof_idx) in enumerate(kfold.split(X,y)):
-            all_data.loc[oof_idx, 'oof_num'] = idx
-        return all_data
+    def get_loss(self, coef, X, y):
+        pred = (X * coef).sum(axis=1)
+        return -roc_auc_score(y_true=y, y_score=pred)
     
-    def fit(self, X, y):
-        self.fitted_base_models = [list() for _ in range(len(self.base_models))]
-        out_of_fold_predictions = np.zeros((X.shape[0], len(self.base_models)))
-        out_of_fold_predictions = pd.DataFrame(out_of_fold_predictions, columns=[f'base_model_{idx+1}_oof_pred' for idx in range(len(self.base_models))])
-        oof_metadata = self.get_oof_num(X, y)
-        for oof_idx in range(self.n_folds):
-            oof_X_train = X[all_data['oof_num'] != oof_idx]
-            oof_y_train = y[all_data['oof_num'] != oof_idx]
-
-            oof_X_test = X[all_data['oof_num'] == oof_idx]
-            for model_idx, base_model in enumerate(self.base_models):
-                fitted_base_model = base_model.fit(oof_X_train, oof_y_train)
-                self.fitted_base_models[model_idx].append(fitted_base_model)
-                oof_predictions = fitted_base_model.predict_proba(oof_X_test)[:,1]
-                out_of_fold_predictions.iloc[oof_X_test.index, model_idx] = oof_predictions
-        if self.add_original_features:
-            out_of_fold_predictions = pd.concat([X, out_of_fold_predictions], axis=1)
-        self.fitted_meta_model = self.meta_model.fit(out_of_fold_predictions, y)
-        return self
-    
-    def predict_proba(self, X):
-        meta_features = np.column_stack(
-            [np.column_stack([model.predict_proba(X)[:,1] for model in within_fold_models]).mean(axis=1)
-             for within_fold_models in self.fitted_base_models])
+    def fit(self, X, y, random_init=True):
+        loss_partial = partial(self.get_loss, X=X, y=y)
+        if not random_init:
+            initial_coef = [0.5, 0.5]
+        else:
+            initial_coef = scipy.special.softmax(np.random.uniform(low=0, high=1, size=X.shape[1]))
+        self.coef_ = scipy.optimize.minimize(loss_partial, initial_coef, method='nelder-mead')
         
-        meta_features = pd.DataFrame(meta_features, columns=[f'base_model_{idx+1}_oof_pred' for idx in range(len(self.base_models))])
-        if self.add_original_features:
-            meta_features = pd.concat([X, meta_features], axis=1)
-        self.meta_features = meta_features
-        predictions = self.fitted_meta_model.predict_proba(meta_features)[:,1]
-        return predictions
+    def predict(self, X):
+        return (self.coefficients() * X).sum(axis=1)
+
+    def coefficients(self):
+        return self.coef_.x
+
+opt = OptimizedRounder_v2()       
+opt.fit(X=X[['xgb_oof_pred', 'rf_oof_pred']], y=X[label])      
+opt.coefficients()
+opt_x = opt.predict(X_test[['xgb_oof_pred', 'rf_oof_pred']])
+
+roc_auc_score(y_true=X_test[label], y_score=opt_x) # 0.917523
+
+X_test[['xgb_oof_pred', 'rf_oof_pred']] * opt.coef_
+
+(X_test[['xgb_oof_pred', 'rf_oof_pred']] * [0.1, 0.5]).sum(axis=-1)
+        
+#### Experiment on averaged nelder-mead optimzed coefficients #####
+
+meta_fold_models = []
+
+## To run separate model blend scores
+fold_num = []
+valid_scores = []
+valid_predictions = []
+test_predictions = []
+model_from_fold_lst = [] 
+val_dict = {}
+
+meta_X_test = pd.DataFrame({'xgb_oof_pred': simple_blend_base1, 'rf_oof_pred': rf_blend_test_predictions })
+X_test['xgb_oof_pred'] = simple_blend_base1
+X_test['rf_oof_pred'] = rf_blend_test_predictions
+meta_X_test = X_test
+coefs= []
+for fold in range(5):
+    X_train_fold = X[X['fold']!=fold].reset_index(drop=True)
+    X_val_fold = X[X['fold']==fold].reset_index(drop=True)
+    X_train = X_train_fold[oof_model_pred_cols]
+    y_train = X_train_fold[label]
+
+    meta_fold_model = LogisticRegression(penalty='l2', C=1.5, random_state=fold, solver='saga')
+    # meta_fold_model = Lasso(alpha=0.1) 
+   
+    meta_fold_model.fit(X_train, y_train)
+    
+    opt = OptimizedRounder_v2()       
+    opt.fit(X=X_train_fold[oof_model_pred_cols], y=X_train_fold[label], random_init=False) 
+    coefs.append(opt.coefficients())
+    # valid_score = score_model(meta_fold_model, X_val_fold[oof_model_pred_cols], X_val_fold[label])
+    test_pred = meta_fold_model.predict_proba(meta_X_test[oof_model_pred_cols])[:,1]
+    valid_pred = meta_fold_model.predict_proba(X_val_fold[oof_model_pred_cols])[:,1]
+    valid_score = roc_auc_score(X_val_fold[label], valid_pred)
+    valid_scores.append(valid_score)
+    test_predictions.append(test_pred)
+    valid_predictions.append(valid_pred)
+
+# Really marginally better, and it is random
+averaged_coefs = np.stack(coefs).mean(axis=0)
+a_coef_pred = (averaged_coefs * X[['rf_oof_pred','xgb_oof_pred']]).mean(axis=1)
+roc_auc_score(y_true=X[label], y_score=a_coef_pred)  # 0.86278338, 0.8626 without random init
+
+a_coef_pred = ([0.5,0.5] * X[['rf_oof_pred','xgb_oof_pred']]).mean(axis=1)
+roc_auc_score(y_true=X[label], y_score=a_coef_pred)  # 0.86273
+
+averaged_coefs = np.stack(coefs).mean(axis=0)
+a_coef_pred = (averaged_coefs * X_test[['rf_oof_pred','xgb_oof_pred']]).mean(axis=1)
+roc_auc_score(y_true=X_test[label], y_score=a_coef_pred)  #0.91739
+
+
+
+
+
+
+
+    
+        
+    # def _kappa_loss(self, coef, X, y):
+    #     preds = pd.cut(X, [-np.inf] + list(np.sort(coef)) + [np.inf], labels = [0, 1, 2, 3, 4])
+    #     return -cohen_kappa_score(y, preds, weights = 'quadratic')
+    
+    # def fit(self, X, y):
+    #     loss_partial = partial(self._kappa_loss, X = X, y = y)
+    #     initial_coef = [0.5, 1.5, 2.5, 3.5]
+    #     self.coef_ = sp.optimize.minimize(loss_partial, initial_coef, method = 'nelder-mead')
+    
+    # def predict(self, X, coef):
+    #     preds = pd.cut(X, [-np.inf] + list(np.sort(coef)) + [np.inf], labels = [0, 1, 2, 3, 4])
+    #     return preds
+    
+    # def coefficients(self):
+    #     return self.coef_['x']
     
     
-model1 = 
-base_models = [model, model, model]
-meta_model = metamodel = XGBClassifier(n_estimators=2, max_depth=2, learning_rate=1, objective='binary:logistic')
-sam = StackingAveragedModels(base_models, meta_model, add_original_features=True)
-sam_f = sam.fit(X_train, y_train)
-pred = sam.predict_proba(X_train)
+# # Test blended model
+# class StackingAveragedModels:
+#     def __init__(self, base_models, meta_model, n_folds=5, add_original_features=False):
+#         self.base_models = base_models
+#         self.meta_model = meta_model
+#         self.n_folds = n_folds
+#         self.add_original_features = add_original_features
+
+#     def get_oof_num(self, X, y):
+#         kfold = KFold(n_splits = self.n_folds, shuffle=True, random_state=156)
+#         all_data = pd.concat([X, y], axis=1)
+#         all_data.loc[:, 'oof_num'] = 0
+#         for idx, (train_idx, oof_idx) in enumerate(kfold.split(X,y)):
+#             all_data.loc[oof_idx, 'oof_num'] = idx
+#         return all_data
+    
+#     def fit(self, X, y):
+#         self.fitted_base_models = [list() for _ in range(len(self.base_models))]
+#         out_of_fold_predictions = np.zeros((X.shape[0], len(self.base_models)))
+#         out_of_fold_predictions = pd.DataFrame(out_of_fold_predictions, columns=[f'base_model_{idx+1}_oof_pred' for idx in range(len(self.base_models))])
+#         oof_metadata = self.get_oof_num(X, y)
+#         for oof_idx in range(self.n_folds):
+#             oof_X_train = X[all_data['oof_num'] != oof_idx]
+#             oof_y_train = y[all_data['oof_num'] != oof_idx]
+
+#             oof_X_test = X[all_data['oof_num'] == oof_idx]
+#             for model_idx, base_model in enumerate(self.base_models):
+#                 fitted_base_model = base_model.fit(oof_X_train, oof_y_train)
+#                 self.fitted_base_models[model_idx].append(fitted_base_model)
+#                 oof_predictions = fitted_base_model.predict_proba(oof_X_test)[:,1]
+#                 out_of_fold_predictions.iloc[oof_X_test.index, model_idx] = oof_predictions
+#         if self.add_original_features:
+#             out_of_fold_predictions = pd.concat([X, out_of_fold_predictions], axis=1)
+#         self.fitted_meta_model = self.meta_model.fit(out_of_fold_predictions, y)
+#         return self
+    
+#     def predict_proba(self, X):
+#         meta_features = np.column_stack(
+#             [np.column_stack([model.predict_proba(X)[:,1] for model in within_fold_models]).mean(axis=1)
+#              for within_fold_models in self.fitted_base_models])
+        
+#         meta_features = pd.DataFrame(meta_features, columns=[f'base_model_{idx+1}_oof_pred' for idx in range(len(self.base_models))])
+#         if self.add_original_features:
+#             meta_features = pd.concat([X, meta_features], axis=1)
+#         self.meta_features = meta_features
+#         predictions = self.fitted_meta_model.predict_proba(meta_features)[:,1]
+#         return predictions
+    
+    
+# model1 = 
+# base_models = [model, model, model]
+# meta_model = metamodel = XGBClassifier(n_estimators=2, max_depth=2, learning_rate=1, objective='binary:logistic')
+# sam = StackingAveragedModels(base_models, meta_model, add_original_features=True)
+# sam_f = sam.fit(X_train, y_train)
+# pred = sam.predict_proba(X_train)
 
 
 
-import numpy as np
-import pandas as pd
-import time
+# import numpy as np
+# import pandas as pd
+# import time
 
 
-categorical_columns = ['Embarked', 
-                      'Parch',
-                      'SibSp',
-                      'Sex',
-                      'Pclass',
-                      'Ticket',
-                      'Cabin']
+# categorical_columns = ['Embarked', 
+#                       'Parch',
+#                       'SibSp',
+#                       'Sex',
+#                       'Pclass',
+#                       'Ticket',
+#                       'Cabin']
 
-numerical_columns = ['Age', 'Fare']
-feature_columns = categorical_columns + numerical_columns
-identifier = 'PassengerId'
-label = 'Survived'
+# numerical_columns = ['Age', 'Fare']
+# feature_columns = categorical_columns + numerical_columns
+# identifier = 'PassengerId'
+# label = 'Survived'
 
-X_train=pd.read_csv('data/X_train.csv',)
-y_train=pd.read_csv('data/y_train.csv',)
-X_val=pd.read_csv('data/X_val.csv',)
-y_val = pd.read_csv('data/y_val.csv',)
-test_encoded = pd.read_csv('data/test_encoded.csv',)
+# X_train=pd.read_csv('data/X_train.csv',)
+# y_train=pd.read_csv('data/y_train.csv',)
+# X_val=pd.read_csv('data/X_val.csv',)
+# y_val = pd.read_csv('data/y_val.csv',)
+# test_encoded = pd.read_csv('data/test_encoded.csv',)
 
-X_train.groupby(['Parch']).groups.values()
+# X_train.groupby(['Parch']).groups.values()

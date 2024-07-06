@@ -318,6 +318,7 @@ X_test['xgb_oof_pred'] = simple_blend_base1
 X_test['rf_oof_pred'] = rf_blend_test_predictions
 meta_X_test = X_test
 coefs= []
+X['meta_oof_pred'] = -1
 for fold in range(5):
     X_train_fold = X[X['fold']!=fold].reset_index(drop=True)
     X_val_fold = X[X['fold']==fold].reset_index(drop=True)
@@ -335,8 +336,12 @@ for fold in range(5):
     # valid_score = score_model(meta_fold_model, X_val_fold[oof_model_pred_cols], X_val_fold[label])
     test_pred = meta_fold_model.predict_proba(meta_X_test[oof_model_pred_cols])[:,1]
     valid_pred = meta_fold_model.predict_proba(X_val_fold[oof_model_pred_cols])[:,1]
+    # X.loc[X['fold']==fold, 'meta_oof_pred'] = valid_pred
+    
     valid_score = roc_auc_score(X_val_fold[label], valid_pred)
     valid_scores.append(valid_score)
+    
+    
     test_predictions.append(test_pred)
     valid_predictions.append(valid_pred)
 

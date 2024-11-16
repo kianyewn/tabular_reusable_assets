@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Set, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,11 +16,15 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import tqdm
-from loguru import logger
 from sklearn.metrics import roc_auc_score
 from termcolor import colored
 from torch.optim import SGD, Adam, AdamW
 from torch.optim.lr_scheduler import LambdaLR
+
+from tabular_reusable_assets.utils.logger import default_logger as logger
+
+from .callbacks.base_callback import TrainerCallback
+from .callbacks.metrics_callback import MetricsCallback
 
 seed = 90
 torch.manual_seed(seed)
@@ -92,6 +96,7 @@ class Config:
     log_dir = Path("logs")
     within_epoch_logs_path = "./logs/within_epoch_logs.csv"
     run_description = "Single batch. Test without bells and whistle."
+    experiment_name= "Single batch. Test without bells and whistle."
     save = True
 
     def __post_init__(self):
@@ -218,37 +223,6 @@ def calculate_auc(y_pred, y_true):
     return roc_auc_score(y_true=y_true, y_score=y_pred)
 
 
-class AverageMeter:
-    def __init__(self, store_history=False, store_avg_history=False):
-        self.reset()
-        self.store_history = store_history
-        self.store_avg_history = store_avg_history
-
-        if self.store_history:
-            self.history = []
-
-        if self.store_avg_history:
-            self.avg_history = []
-
-    def reset(self):
-        self.val = 0
-        self.count = 0
-        self.total = 0
-        self.avg = 0
-
-    def update(self, val, n):
-        self.count += n
-        self.total += val * n
-        self.avg = self.total / self.count
-        self.val = val
-
-        if self.store_history:
-            self.history.append(self.val)
-
-        if self.store_avg_history:
-            self.avg_history.append(self.avg)
-
-
 def asMinute(seconds):
     m = int(seconds // 60)
     r = int(seconds - m * 60)
@@ -271,24 +245,109 @@ def calculate_metric_score(y_pred, y_true):
     return calculate_auc(y_pred=y_pred, y_true=y_true).item()
 
 
-def train(train_dataloader, model, optimizer, epoch, store_history=True):
-    losses = AverageMeter(store_history=store_history, store_avg_history=True)
-    batch_time = AverageMeter(store_history=store_history)
-    data_time = AverageMeter(store_history=store_history)
-    sent_count = AverageMeter(store_history=store_history)
-    scores = AverageMeter(store_history=store_history)
-    grad_values = AverageMeter(store_history=store_history)
-    lrs = AverageMeter(store_history=store_history)
+# @dataclass
+# class TrainingMetrics:
+#     enabled: bool = None
+#     store_history: bool = False
+#     enabled_metrics: Union[List[str], Set[str]] = field(default_factory=list)
 
+#     losses: AverageMeter = field(
+#         default_factory=lambda: AverageMeter(store_history=True, store_avg_history=True)
+#     )
+#     batch_time: Optional[AverageMeter] = None
+#     data_time: Optional[AverageMeter] = None
+#     sent_count: Optional[AverageMeter] = None
+#     scores: Optional[AverageMeter] = None
+#     grad_values: Optional[AverageMeter] = None
+#     lrs: Optional[AverageMeter] = None
+
+#     def __post_init__(self):
+#         """Initialize only the enabled metrics"""
+#         if len(self.enabled_metrics) > 0:
+#             self.enabled = True
+
+#         for metric_name in self.enabled_metrics:
+#             if hasattr(self, metric_name):
+#                 setattr(
+#                     self,
+#                     metric_name,
+#                     AverageMeter(
+#                         store_history=self.store_history,
+#                         store_avg_history=(metric_name == "losses"),
+#                     ),
+#                 )
+
+#             else:
+#                 logger.warning(
+#                     "Warning, metric: {metric_name} not supported and ignored."
+#                 )
+
+
+#     def init_before_epoch(self):
+#         self.start = self.end = time.time()
+#         self.global_step = 0
+
+#     def update_end_time(self):
+#         if self.enabled:
+#             self.end = time.time()
+#             self.global_step += 1
+
+#     def update(self, name: str, value: float, n: int= 1):
+#         """Update metric if enabled, otherwise no-op"""
+#         if self.enabled and hasattr(self, name) and getattr(self, name) is not None:
+#             getattr(self, name).update(value, n)
+
+#     def log_step(
+#         self,
+#         step,
+#         epoch,
+#         losses,
+#         lrs,
+#         global_step,
+#         batch_time,
+#         data_time,
+#         sent_count,
+#         scores,
+#         total_steps,
+#         start,
+#     ):
+#         if self.enabled_metrics:
+#             logger.info(
+#                 f"Epoch[{epoch}] "
+#                 f"steps:[{step +1}/{len(train_dataloader)})] "
+#                 f"total_elapsed_time: {total_elapsed}, "
+#                 f"remaining_time: {remaining} "
+#                 f"data_time: {metrics.data_time.val:.4f} "  # not average to monitor per batch data
+#                 f"elapsed_batch_time:{metrics.batch_time.val:.4f} "
+#                 f"sent_count_s: {(metrics.sent_count.avg / metrics.batch_time.avg):.3f} "  # average number of samples per second
+#                 f"lr: {optimizer.param_groups[0]['lr']:.5f} "
+#                 f"loss: {metrics.losses.val:.3f} "
+#                 f"avg loss: {metrics.losses.avg:.3f} "
+#                 f"score: {metrics.scores.val:.3f} ({metrics.scores.avg})"
+#                 f"grad: {metrics.grad_values.val:.3f} "
+#                 f"gradnorm: {grad_norm:.3f} "
+#             )
+
+
+def train(
+    train_dataloader,
+    model,
+    optimizer,
+    epoch,
+    metrics_callback: TrainerCallback,
+    callbacks: List[TrainerCallback] = None,
+):
     model.train()
-    
-    
-    start = end = time.time()
+
+    end = time.time()
     global_step = 0
     total_steps = len(train_dataloader)
+
+    # initialize metric callback
+    metrics_callback.on_training_start()
     for step, (bx, by) in enumerate(train_dataloader):
         # Measure data loading time
-        data_time.update(time.time() - end, n=1)
+        data_time = time.time() - end
 
         # Send to device
         bx, by = bx.to(CFG.device), by.to(CFG.device)
@@ -302,74 +361,42 @@ def train(train_dataloader, model, optimizer, epoch, store_history=True):
         optimizer.step()
         # scheduler.step()
 
-        # Track training loss
-        losses.update(
-            loss.data.item(), n=out.shape[0]
-        )  # last batch may not be CFG.batch_size
-
         # Grad checks
-        current_grad = torch.sqrt(
-            sum([torch.square(p.grad).sum() for p in model.parameters()])
-        )
         grad_norm = torch.nn.utils.clip_grad_norm_(
             model.parameters(), CFG.max_grad_norm
         )
-        grad_values.update(grad_norm, n=1)
-
         # keep track of current scores
         with torch.no_grad():
+            model.eval()
             score = calculate_metric_score(
                 y_pred=out.view(-1).detach().numpy(), y_true=by.detach().numpy()
             )
-            scores.update(score, n=bx.shape[0])
+            model.train()
 
-        # Keep track of gradients
-        grad_values.update(grad_norm, n=1)
-        # keep track of the number of samples sent
-        sent_count.update(out.shape[0], n=1)
-        # Track time taken for a single batch
-        batch_time.update(time.time() - end, n=1)
-        # Track learning rate
-        lrs.update(optimizer.param_groups[0]["lr"], n=1)
-
+        batch_metrics = {
+            "epoch": epoch, # current epoch
+            "total_steps": total_steps, # total number of steps
+            "data_time": data_time, # track time taken to load a single batch of data
+            "batch_time": time.time() - end, # track time taken for a single batch
+            "sent_count": {"value": out.shape[0], "n": 1}, # track number of samples sent
+            "losses": {"value": loss.item(), "n": out.shape[0]}, # track loss
+            "scores": {"value": score, "n": out.shape[0]}, # track score
+            "grad_values": grad_norm, # track gradients
+            "lrs": optimizer.param_groups[0]["lr"] # track learning rate
+        }
+        metrics_callback.on_batch_end(batch=step, logs=batch_metrics)
+        
         end = time.time()
-
         global_step += 1
-        if (
-            (step == 0)
-            or ((step + 1) % CFG.print_freq) == 0
-            or (step + 1 == len(train_dataloader))
-        ):
-            with torch.no_grad():
-                total_elapsed, remaining = timeStat(
-                    start=start, percent=(step + 1) / len(train_dataloader)
-                )
-                logger.info(
-                    f"Epoch[{epoch}] "
-                    f"steps:[{step +1}/{len(train_dataloader)})] "
-                    f"total_elapsed_time: {total_elapsed}, "
-                    f"remaining_time: {remaining} "
-                    f"data_time: {data_time.val:.4f} "  # not average to monitor per batch data
-                    f"elapsed_batch_time:{batch_time.val:.4f} "
-                    f"sent_count_s: {(sent_count.avg / batch_time.avg):.3f} "  # average number of samples per second
-                    f"lr: {optimizer.param_groups[0]['lr']:.5f} "
-                    f"loss: {losses.val:.3f} "
-                    f"avg loss: {losses.avg:.3f} "
-                    f"score: {scores.val:.3f} ({scores.avg})"
-                    f"grad: {grad_values.val:.3f} "
-                    f"gradnorm: {grad_norm:.3f} "
-                )
-                
-                _log_step(step, epoch, losses, lrs, global_step, batch_time, data_time, sent_count, scores, total_steps, start)
 
     return {
-        "losses": losses,
-        "lrs": lrs,
-        "global_step": global_step,
-        "batch_time": batch_time,
-        "data_time": data_time,
-        "sent_count": sent_count,
-        "scores": scores,
+        "losses": 1,
+        "lrs": 1,
+        "global_step": 1,
+        "batch_time": 1,
+        "data_time": 1,
+        "sent_count": 1,
+        "scores": 1,
     }
 
 
@@ -459,7 +486,7 @@ def validate(model, val_dataloader, store_history=True):
                 f"avg_loss: {losses.avg:.4f} "
                 f"score: {scores.val:.4f} ({scores.avg:.4f}) "
             )
-            
+
     predictions = torch.cat(predictions).view(-1).numpy()
     labels = torch.cat(labels).numpy()
     final_score = calculate_auc(y_pred=predictions, y_true=labels)
@@ -612,93 +639,94 @@ class EarlyStopping:
 def reset_log_step():
     if os.path.exists(Path(CFG.log_dir) / "step_metrics.csv"):
         os.remove(Path(CFG.log_dir) / "step_metrics.csv")
-    
-def _log_step(
-    step: int,
-    epoch: int,
-    losses: AverageMeter,
-    lrs: AverageMeter,
-    global_step: int,
-    batch_time: AverageMeter,
-    data_time: AverageMeter,
-    sent_count: AverageMeter,
-    scores: AverageMeter,
-    total_steps:int,
-    start:float,
-):
-    """
-    Log metrics at step level
-    """
-    # # Prepare step metrics
-    # step_metrics = {
-    #     "step": step,
-    #     "epoch": epoch,
-    #     "global_step": self.global_step,
-    #     "lr": self.optimizer.param_groups[0]["lr"],
-    #     "batch_loss": batch_metrics["loss"],
-    #     "batch_score": batch_metrics["score"],
-    #     "batch_time": batch_metrics["batch_time"],
-    #     "samples_per_sec": batch_metrics["samples_per_sec"],
-    # }
 
-    # # Console logging for steps
-    # self.console_logger.info(
-    #     f"Epoch: {epoch}/{self.config.n_epoch} "
-    #     f"Step: [{step}/{batch_metrics['total_steps']}] "
-    #     f"Loss: {step_metrics['batch_loss']:.4f} "
-    #     f"Score: {step_metrics['batch_score']:.4f} "
-    #     f"LR: {step_metrics['lr']:.6f} "
-    #     f"Speed: {step_metrics['samples_per_sec']:.1f} samples/sec"
-    # )
 
-    total_elapsed, remaining = timeStat(
-        start=start, percent=(step + 1) / len(train_dataloader)
-    )
-    
-    # May be slow since it is IO bounded
-    step_metrics = {}
-    
-    step_metrics["epoch"] = epoch
+# def _log_step(
+#     step: int,
+#     epoch: int,
+#     losses: AverageMeter,
+#     lrs: AverageMeter,
+#     global_step: int,
+#     batch_time: AverageMeter,
+#     data_time: AverageMeter,
+#     sent_count: AverageMeter,
+#     scores: AverageMeter,
+#     total_steps: int,
+#     start: float,
+# ):
+#     """
+#     Log metrics at step level
+#     """
+#     # # Prepare step metrics
+#     # step_metrics = {
+#     #     "step": step,
+#     #     "epoch": epoch,
+#     #     "global_step": self.global_step,
+#     #     "lr": self.optimizer.param_groups[0]["lr"],
+#     #     "batch_loss": batch_metrics["loss"],
+#     #     "batch_score": batch_metrics["score"],
+#     #     "batch_time": batch_metrics["batch_time"],
+#     #     "samples_per_sec": batch_metrics["samples_per_sec"],
+#     # }
 
-    step_metrics["global_step"] = global_step
-    step_metrics["batch_time"]=batch_time.history
-    step_metrics["data_time"]=data_time.history
-    step_metrics["sent_count"] = sent_count.history
-    # training scores and loss
-    step_metrics["lr"] = lrs.history
-    step_metrics["score"] = scores.history
-    step_metrics["loss_avg"] = losses.avg_history
-    step_metrics["loss"] = losses.history
+#     # # Console logging for steps
+#     # self.console_logger.info(
+#     #     f"Epoch: {epoch}/{self.config.n_epoch} "
+#     #     f"Step: [{step}/{batch_metrics['total_steps']}] "
+#     #     f"Loss: {step_metrics['batch_loss']:.4f} "
+#     #     f"Score: {step_metrics['batch_score']:.4f} "
+#     #     f"LR: {step_metrics['lr']:.6f} "
+#     #     f"Speed: {step_metrics['samples_per_sec']:.1f} samples/sec"
+#     # )
 
-    # step_metrics["eoe_val_score"] = eoe_val_score
-    # step_metrics["eoe_val_loss"] = eoe_val_loss
+#     total_elapsed, remaining = timeStat(
+#         start=start, percent=(step + 1) / len(train_dataloader)
+#     )
 
-    logger.info(
-        f"Epoch: [{epoch}/{CFG.n_epoch}] "
-        f"Step: [{step + 1}/{total_steps}] "
-        f"total_elapsed_time: {total_elapsed} "
-        f"remaining: {remaining} "
-        f"data_time: {data_time.val:.4f} "
-        f"elapsed_batch_time: {batch_time.val:.4f} "
-        f"sent_count_s: {(sent_count.avg / batch_time.avg):.4f} "
-        f"batch_loss: {losses.val:.4f} "
-        f"batch_avg_loss: {losses.avg:.4f} "
-        f"score: {scores.val:.4f} ({scores.avg:.4f}) "
-    )
+#     # May be slow since it is IO bounded
+#     step_metrics = {}
 
-    # # TensorBoard logging for steps
-    # for name, value in step_metrics.items():
-    #     if isinstance(value, (int, float)):
-    #         self.tb_writer.add_scalar(f'step/{name}', value, self.global_step)
+#     step_metrics["epoch"] = epoch
 
-    # CSV logging for steps
-    step_log_path = CFG.log_dir / "step_metrics.csv"
-    step_df = pd.DataFrame([step_metrics])
+#     step_metrics["global_step"] = global_step
+#     step_metrics["batch_time"] = batch_time.history
+#     step_metrics["data_time"] = data_time.history
+#     step_metrics["sent_count"] = sent_count.history
+#     # training scores and loss
+#     step_metrics["lr"] = lrs.history
+#     step_metrics["score"] = scores.history
+#     step_metrics["loss_avg"] = losses.avg_history
+#     step_metrics["loss"] = losses.history
 
-    if step_log_path.exists():
-        step_df.to_csv(step_log_path, mode="a", header=False, index=False)
-    else:
-        step_df.to_csv(step_log_path, index=False)
+#     # step_metrics["eoe_val_score"] = eoe_val_score
+#     # step_metrics["eoe_val_loss"] = eoe_val_loss
+
+#     logger.info(
+#         f"Epoch: [{epoch}/{CFG.n_epoch}] "
+#         f"Step: [{step + 1}/{total_steps}] "
+#         f"total_elapsed_time: {total_elapsed} "
+#         f"remaining: {remaining} "
+#         f"data_time: {data_time.val:.4f} "
+#         f"elapsed_batch_time: {batch_time.val:.4f} "
+#         f"sent_count_s: {(sent_count.avg / batch_time.avg):.4f} "
+#         f"batch_loss: {losses.val:.4f} "
+#         f"batch_avg_loss: {losses.avg:.4f} "
+#         f"score: {scores.val:.4f} ({scores.avg:.4f}) "
+#     )
+
+#     # # TensorBoard logging for steps
+#     # for name, value in step_metrics.items():
+#     #     if isinstance(value, (int, float)):
+#     #         self.tb_writer.add_scalar(f'step/{name}', value, self.global_step)
+
+#     # CSV logging for steps
+#     step_log_path = CFG.log_dir / "step_metrics.csv"
+#     step_df = pd.DataFrame([step_metrics])
+
+#     if step_log_path.exists():
+#         step_df.to_csv(step_log_path, mode="a", header=False, index=False)
+#     else:
+#         step_df.to_csv(step_log_path, index=False)
 
 
 if __name__ == "__main__":
@@ -749,46 +777,68 @@ if __name__ == "__main__":
 
     train_logger.reset()
     reset_log_step()
-     
+
     early_stopping = EarlyStopping(patience=3, min_delta=0.001)
 
-    # losses_list = []
+    metrics_callback = MetricsCallback(
+        metrics_to_track=[
+            "losses",
+            "batch_time",
+            "data_time",
+            "sent_count",
+            "scores",
+            "grad_values",
+            "lrs",
+        ],
+        log_dir=CFG.log_dir,
+        experiment_name=CFG.experiment_name,
+        store_history=True,
+    )
+
     for i in range(CFG.n_epoch):
+        # metrics callback
+        metrics_callback.on_epoch_start()
         # you need to initialize scheduler again if using learning rate scheduler
         # num_training_steps is for when your dataset is infinite and you want to stop
 
         # Train for single epoch and obtain logs for print_freq steps
-        train_logs = train(train_dataloader, model, optimizer, epoch=i)
-
-        # Validate for single epoch
-        val_logs = validate(model, val_dataloader)
-        print(f'val loss: {val_logs['scores'].avg}')
-
-        # store training steps log
-        train_logger.update_within_epoch_logs(
-            epoch_num=i + 1,
-            **train_logs,
-            eoe_val_loss=val_logs["losses"].avg,
-            eoe_val_score=val_logs["final_score"],
+        train_logs = train(
+            train_dataloader,
+            model,
+            optimizer,
+            epoch=i,
+            metrics_callback=metrics_callback,
         )
 
-        if early_stopping(val_logs["losses"].avg):
-            logger.info(f"Early stopping triggered at epoch: {i+1}")
-            break
+        # Validate for single epoch
+        # val_logs = validate(model, val_dataloader)
+        # print(f'val loss: {val_logs['scores'].avg}')
+
+        # # store training steps log
+        # train_logger.update_within_epoch_logs(
+        #     epoch_num=i + 1,
+        #     **train_logs,
+        #     eoe_val_loss=val_logs["losses"].avg,
+        #     eoe_val_score=val_logs["final_score"],
+        # )
+
+        # if early_stopping(val_logs["losses"].avg):
+        #     logger.info(f"Early stopping triggered at epoch: {i+1}")
+        #     break
 
         # store training epoch logs
         print("==========")
 
-    key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
-    print(key_len)
+    # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
+    # print(key_len)
 
-    # plot training losses
-    total_loss_steps = train_logger.within_epoch_logs_dict["loss_avg"]
-    plt.plot(range(len(total_loss_steps)), total_loss_steps)
-    plt.show()
+    # # plot training losses
+    # total_loss_steps = train_logger.within_epoch_logs_dict["loss_avg"]
+    # plt.plot(range(len(total_loss_steps)), total_loss_steps)
+    # plt.show()
 
-    train_logger.save()
-    d = train_logger.get_across_epoch_logs(CFG.within_epoch_logs_path)
+    # train_logger.save()
+    # d = train_logger.get_across_epoch_logs(CFG.within_epoch_logs_path)
 
 
 # class Trainer:

@@ -96,7 +96,7 @@ class Config:
     log_dir = Path("logs")
     within_epoch_logs_path = "./logs/within_epoch_logs.csv"
     run_description = "Single batch. Test without bells and whistle."
-    experiment_name= "Single batch. Test without bells and whistle."
+    experiment_name = "Single batch. Test without bells and whistle."
     save = True
 
     def __post_init__(self):
@@ -342,9 +342,7 @@ def train(
     end = time.time()
     global_step = 0
     total_steps = len(train_dataloader)
-
-    # initialize metric callback
-    metrics_callback.on_training_start()
+    
     for step, (bx, by) in enumerate(train_dataloader):
         # Measure data loading time
         data_time = time.time() - end
@@ -374,20 +372,25 @@ def train(
             model.train()
 
         batch_metrics = {
-            "epoch": epoch, # current epoch
-            "total_steps": total_steps, # total number of steps
-            "data_time": data_time, # track time taken to load a single batch of data
-            "batch_time": time.time() - end, # track time taken for a single batch
-            "sent_count": {"value": out.shape[0], "n": 1}, # track number of samples sent
-            "losses": {"value": loss.item(), "n": out.shape[0]}, # track loss
-            "scores": {"value": score, "n": out.shape[0]}, # track score
-            "grad_values": grad_norm, # track gradients
-            "lrs": optimizer.param_groups[0]["lr"] # track learning rate
+            "epoch": epoch,  # current epoch
+            "total_steps": total_steps,  # total number of steps
+            "data_time": data_time,  # track time taken to load a single batch of data
+            "batch_time": time.time() - end,  # track time taken for a single batch
+            "sent_count": {
+                "value": out.shape[0],
+                "n": 1,
+            },  # track number of samples sent
+            "losses": {"value": loss.item(), "n": out.shape[0]},  # track loss
+            "scores": {"value": score, "n": out.shape[0]},  # track score
+            "grad_values": grad_norm,  # track gradients
+            "lrs": optimizer.param_groups[0]["lr"],  # track learning rate
         }
         metrics_callback.on_batch_end(batch=step, logs=batch_metrics)
-        
+
         end = time.time()
         global_step += 1
+
+    metrics_callback.on_training_end()
 
     return {
         "losses": 1,
@@ -795,6 +798,9 @@ if __name__ == "__main__":
         store_history=True,
     )
 
+    # initialize metric callback
+    metrics_callback.on_training_start()
+    
     for i in range(CFG.n_epoch):
         # metrics callback
         metrics_callback.on_epoch_start()
@@ -827,7 +833,10 @@ if __name__ == "__main__":
         #     break
 
         # store training epoch logs
+        metrics_callback.on_epoch_end()
         print("==========")
+        # initialize metric callback
+    metrics_callback.on_training_end()
 
     # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
     # print(key_len)

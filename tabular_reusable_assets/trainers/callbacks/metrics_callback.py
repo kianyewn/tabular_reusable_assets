@@ -20,7 +20,7 @@ class MetricsCallback(TrainerCallback):
         store_history: bool = False,
     ):
         self.store_history = store_history
-        self.metrics = {}
+        # self.metrics = {}
         self.log_dir = Path(log_dir)
         self.experiment_name = experiment_name
 
@@ -43,6 +43,12 @@ class MetricsCallback(TrainerCallback):
         self.batch_log_path = self.log_dir / "batch_metrics.csv"
         self.epoch_log_path = self.log_dir / "epoch_metrics.csv"
 
+        
+        # Initialize buffer settings
+        self.buffer_size = 100  # Configure how many rows to store before writing
+        self._metrics_buffer = []  # Initialize empty buffer
+        
+
     def on_training_start(self):
         """Called at the start of training"""
         self.training_start_time = time.time()
@@ -57,7 +63,7 @@ class MetricsCallback(TrainerCallback):
         self.prev_batch_end_time = time.time()
 
     def on_epoch_end(self):
-        return
+        self._flush_metrics_buffer()
 
     def on_batch_start(self, batch: int, logs: dict = None):
         for name, value in logs.items():
@@ -131,14 +137,39 @@ class MetricsCallback(TrainerCallback):
 
             logger.info(log_msg)
 
-        batch_metric_df = pd.DataFrame([batch_metrics_row])
-        if self.batch_log_path.exists():
-            batch_metric_df.to_csv(
-                self.batch_log_path, mode="a", header=False, index=False
-            )
-        else:
-            batch_metric_df.to_csv(self.batch_log_path, index=False)
+        # Add to buffer and flush if needed
+        self._metrics_buffer.append(batch_metrics_row)
+        
+        if len(self._metrics_buffer) >= self.buffer_size:
+            self._flush_metrics_buffer()
         return
+
+    def _flush_metrics_buffer(self) -> None:
+        """Write all buffered metrics to disk and clear buffer."""
+        if not self._metrics_buffer:  # Skip if buffer is empty
+            return
+            
+        try:
+            batch_metric_df = pd.DataFrame(self._metrics_buffer)
+            if self.batch_log_path.exists():
+                batch_metric_df.to_csv(
+                    self.batch_log_path,
+                    mode="a",
+                    header=False,
+                    index=False
+                )
+            else:
+                batch_metric_df.to_csv(
+                    self.batch_log_path,
+                    index=False
+                )
+            self._metrics_buffer.clear()
+        except Exception as e:
+            logger.error(f"Failed to flush metrics buffer: {str(e)}")
+
+    def on_training_end(self):
+        """Ensure any remaining metrics are written when training ends."""
+        self._flush_metrics_buffer()
 
     def get_current_avg_metrics(self):
         """Return current averaged metrics"""

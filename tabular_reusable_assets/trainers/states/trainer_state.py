@@ -18,6 +18,7 @@ class TrainerState:
     # Best metrics tracking
     best_loss: float = float("inf")
     best_score: float = float("-inf")
+    best_metric: float = float('-inf')
     best_model_path: Optional[str] = None
 
     # Timing
@@ -69,6 +70,9 @@ class TrainerState:
         """Get the total training time"""
         return time.time() - self.epoch_start_time
 
+    def update_global_step(self):
+        self.global_step += 1
+        
     def save(self, path: Path):
         """Save sate to JSON"""
         state_dict = {

@@ -188,6 +188,7 @@ class MetricsCallback(TrainerCallback):
             self._flush_metrics_buffer()
         
         self.state.global_step += 1
+        self.state.best_metric = max(self.state.best_metric, metrics_dict["losses"].avg)
         return
 
     def _flush_metrics_buffer(self) -> None:

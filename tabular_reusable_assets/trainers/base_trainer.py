@@ -21,9 +21,11 @@ from termcolor import colored
 from torch.optim import SGD, Adam, AdamW
 from torch.optim.lr_scheduler import LambdaLR
 
+from tabular_reusable_assets.config.training_arguments import TrainingArguments
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
 from .callbacks.base_callback import TrainerCallback
+from .callbacks.early_stopping_callback import EarlyStoppingCallback
 from .callbacks.metrics_callback import MetricsCallback
 
 seed = 90
@@ -246,7 +248,6 @@ def calculate_metric_score(y_pred, y_true):
     return calculate_auc(y_pred=y_pred, y_true=y_true).item()
 
 
-
 def train(
     train_dataloader,
     model,
@@ -260,7 +261,7 @@ def train(
     end = time.time()
     global_step = 0
     total_steps = len(train_dataloader)
-    
+
     for step, (bx, by) in enumerate(train_dataloader):
         # Measure data loading time
         data_time = time.time() - end
@@ -675,7 +676,7 @@ if __name__ == "__main__":
     param_optimizer = list(model.named_parameters())
     # do not use weight decay for biases and layernorms. Weight decay is L2 norm
     no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
-    
+
     optimizer_grouped_parameters = [
         {
             "params": [
@@ -717,8 +718,24 @@ if __name__ == "__main__":
         store_history=True,
     )
 
+    args = TrainingArguments(
+        logging_strategy="epoch",
+        save_strategy="epoch",
+        eval_strategy="epoch",
+        metric_for_best_model="losses",
+        greater_is_better=False,
+    )
+
+    early_stopping_callback = EarlyStoppingCallback()
+    
     # initialize metric callback
     metrics_callback.on_training_start()
+
+
+    class DummyClass: """Empty class for testing"""
+        
+    control = DummyClass()
+    early_stopping_callback.on_training_start(args, state=metrics_callback.state, control=control)
     
     for i in range(CFG.n_epoch):
         # metrics callback
@@ -754,10 +771,17 @@ if __name__ == "__main__":
         # Save current model at every epoch
         # model_path = CFG.log_dir / f"checkpoints/model_epoch_{i}.pt"
         # torch.save(model.state_dict(), model_path)
-    
+
         # store training epoch logs
-        metrics_callback.on_epoch_end(current_epoch_loss=metrics_callback.metrics.losses.avg, current_epoch_score=metrics_callback.metrics.scores.val, model_path=None)
+        metrics_callback.on_epoch_end(
+            current_epoch_loss=metrics_callback.metrics.losses.avg,
+            current_epoch_score=metrics_callback.metrics.scores.val,
+            model_path=None,
+        )
+        early_stopping_callback.on_evaluate(args, state=metrics_callback.state, control=control, metrics=metrics_callback.metrics)
         print("==========")
+
+    print(early_stopping_callback.state())
         # initialize metric callback
     metrics_callback.on_training_end()
 

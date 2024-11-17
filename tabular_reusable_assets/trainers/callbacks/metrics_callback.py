@@ -7,18 +7,32 @@ import pandas as pd
 
 from tabular_reusable_assets.metrics.training_metrics import TrainingMetrics
 from tabular_reusable_assets.trainers.callbacks.base_callback import TrainerCallback
+from tabular_reusable_assets.trainers.states.trainer_state import TrainerState
 from tabular_reusable_assets.utils.logger import default_logger as logger
 from tabular_reusable_assets.utils.utils import timeStat
 
 
 class MetricsCallback(TrainerCallback):
+    """Callback for tracking and logging training metrics.
+
+    This callback handles the collection, averaging, and logging of training metrics to CSV files.
+    It implements buffered writing to improve I/O performance and provides both batch-level and
+    epoch-level metric tracking.
+
+    Args:
+        metrics_to_track (List[str]): List of metric names to track during training
+        log_dir (Path): Directory path where metric logs will be saved
+        experiment_name (str): Name of the current experiment for logging
+        store_history (bool, optional): Whether to store metric history. Defaults to False
+    """
+
     def __init__(
         self,
         metrics_to_track: List[str],
         log_dir: Path,
         experiment_name: str,
         store_history: bool = False,
-    ):
+    ) -> None:
         self.store_history = store_history
         # self.metrics = {}
         self.log_dir = Path(log_dir)
@@ -32,6 +46,9 @@ class MetricsCallback(TrainerCallback):
             enabled_metrics=metrics_to_track, store_history=store_history
         )
 
+        # Trainer State
+        self.state = TrainerState()
+
         # storeage for all metircs
         self.batch_metrics_history = []
         self.epoch_metrics_history = []
@@ -43,29 +60,49 @@ class MetricsCallback(TrainerCallback):
         self.batch_log_path = self.log_dir / "batch_metrics.csv"
         self.epoch_log_path = self.log_dir / "epoch_metrics.csv"
 
-        
         # Initialize buffer settings
         self.buffer_size = 100  # Configure how many rows to store before writing
         self._metrics_buffer = []  # Initialize empty buffer
-        
 
-    def on_training_start(self):
-        """Called at the start of training"""
+    def on_training_start(self) -> None:
+        """Initialize training start time and reset log files."""
         self.training_start_time = time.time()
+
         # Reset log files
         for path in [self.batch_log_path, self.epoch_log_path]:
             if path.exists():
                 logger.info(f"Removing file: {path}")
                 path.unlink()
 
-    def on_epoch_start(self):
+        # update trainer state
+        self.state.training_start_time = self.training_start_time
+
+    def on_epoch_start(self) -> None:
+        """Initialize timing variables for new epoch."""
         self.epoch_start_time = time.time()
         self.prev_batch_end_time = time.time()
+        
+        # update epoch state
+        self.state.epoch += 1
+        self.state.epoch_start_time = self.epoch_start_time
 
-    def on_epoch_end(self):
+    def on_epoch_end(
+        self, current_epoch_loss: float, current_epoch_score: float, model_path: str
+    ) -> None:
+        """Flush any remaining metrics at the end of epoch."""
         self._flush_metrics_buffer()
 
-    def on_batch_start(self, batch: int, logs: dict = None):
+        # Update state
+        self.state.epoch_end_time = time.time()
+        # self.state.update_best_metrics(current_loss=current_epoch_loss, current_score=current_epoch_score, model_path=)
+
+    def on_batch_start(self, batch: int, logs: Optional[dict] = None) -> None:
+        """Process metrics at the start of each batch.
+
+        Args:
+            batch (int): Current batch number
+            logs (Optional[dict]): Dictionary containing metric values
+        """
         for name, value in logs.items():
             if name in self.metrics:
                 value = value.pop("value", None) if isinstance(value, dict) else value
@@ -73,8 +110,16 @@ class MetricsCallback(TrainerCallback):
                 # Update metrics name
                 self.metrics.update(name, val=value, n=n)
             return
+        
+        self.state.batch_start_time = time.time()
 
-    def on_batch_end(self, batch: int, logs: dict = None):
+    def on_batch_end(self, batch: int, logs: Optional[dict] = None) -> None:
+        """Process and log metrics at the end of each batch.
+
+        Args:
+            batch (int): Current batch number
+            logs (Optional[dict]): Dictionary containing metric values and metadata
+        """
         # Initialize metric row
         batch_metrics_row = {
             "epoch": logs.get("epoch", 0),
@@ -139,41 +184,52 @@ class MetricsCallback(TrainerCallback):
 
         # Add to buffer and flush if needed
         self._metrics_buffer.append(batch_metrics_row)
-        
         if len(self._metrics_buffer) >= self.buffer_size:
             self._flush_metrics_buffer()
+        
+        self.state.global_step += 1
         return
 
     def _flush_metrics_buffer(self) -> None:
-        """Write all buffered metrics to disk and clear buffer."""
+        """Write all buffered metrics to disk and clear buffer.
+
+        Writes accumulated metrics to CSV file and clears the internal buffer.
+        Handles both initial file creation and appending to existing files.
+        """
         if not self._metrics_buffer:  # Skip if buffer is empty
             return
-            
+
         try:
             batch_metric_df = pd.DataFrame(self._metrics_buffer)
             if self.batch_log_path.exists():
                 batch_metric_df.to_csv(
-                    self.batch_log_path,
-                    mode="a",
-                    header=False,
-                    index=False
+                    self.batch_log_path, mode="a", header=False, index=False
                 )
             else:
-                batch_metric_df.to_csv(
-                    self.batch_log_path,
-                    index=False
-                )
+                batch_metric_df.to_csv(self.batch_log_path, index=False)
             self._metrics_buffer.clear()
         except Exception as e:
             logger.error(f"Failed to flush metrics buffer: {str(e)}")
 
-    def on_training_end(self):
+    def on_training_end(self) -> None:
         """Ensure any remaining metrics are written when training ends."""
         self._flush_metrics_buffer()
+        
+        # Update state
+        self.state.training_end_time = time.time()
 
-    def get_current_avg_metrics(self):
-        """Return current averaged metrics"""
-        return {name: metric.avg for name, metric in self.metrics}
+    def get_current_avg_metrics(self) -> dict:
+        """Return current averaged metrics.
 
-    def get_current_metrics(self):
-        return {name: metric.val for name, metric in self.metrics}
+        Returns:
+            dict: Dictionary mapping metric names to their current average values
+        """
+        return {name: metric.avg for name, metric in self.metrics.to_dict().items()}
+
+    def get_current_metrics(self) -> dict:
+        """Return current (non-averaged) metric values.
+
+        Returns:
+            dict: Dictionary mapping metric names to their current values
+        """
+        return {name: metric.val for name, metric in self.metrics.to_dict().items()}

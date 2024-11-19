@@ -27,6 +27,7 @@ from tabular_reusable_assets.utils.logger import default_logger as logger
 from .callbacks.base_callback import TrainerCallback
 from .callbacks.early_stopping_callback import EarlyStoppingCallback
 from .callbacks.metrics_callback import MetricsCallback
+from .callbacks.trainer_callback import  TrainerControl
 
 seed = 90
 torch.manual_seed(seed)
@@ -563,94 +564,6 @@ def reset_log_step():
         os.remove(Path(CFG.log_dir) / "step_metrics.csv")
 
 
-# def _log_step(
-#     step: int,
-#     epoch: int,
-#     losses: AverageMeter,
-#     lrs: AverageMeter,
-#     global_step: int,
-#     batch_time: AverageMeter,
-#     data_time: AverageMeter,
-#     sent_count: AverageMeter,
-#     scores: AverageMeter,
-#     total_steps: int,
-#     start: float,
-# ):
-#     """
-#     Log metrics at step level
-#     """
-#     # # Prepare step metrics
-#     # step_metrics = {
-#     #     "step": step,
-#     #     "epoch": epoch,
-#     #     "global_step": self.global_step,
-#     #     "lr": self.optimizer.param_groups[0]["lr"],
-#     #     "batch_loss": batch_metrics["loss"],
-#     #     "batch_score": batch_metrics["score"],
-#     #     "batch_time": batch_metrics["batch_time"],
-#     #     "samples_per_sec": batch_metrics["samples_per_sec"],
-#     # }
-
-#     # # Console logging for steps
-#     # self.console_logger.info(
-#     #     f"Epoch: {epoch}/{self.config.n_epoch} "
-#     #     f"Step: [{step}/{batch_metrics['total_steps']}] "
-#     #     f"Loss: {step_metrics['batch_loss']:.4f} "
-#     #     f"Score: {step_metrics['batch_score']:.4f} "
-#     #     f"LR: {step_metrics['lr']:.6f} "
-#     #     f"Speed: {step_metrics['samples_per_sec']:.1f} samples/sec"
-#     # )
-
-#     total_elapsed, remaining = timeStat(
-#         start=start, percent=(step + 1) / len(train_dataloader)
-#     )
-
-#     # May be slow since it is IO bounded
-#     step_metrics = {}
-
-#     step_metrics["epoch"] = epoch
-
-#     step_metrics["global_step"] = global_step
-#     step_metrics["batch_time"] = batch_time.history
-#     step_metrics["data_time"] = data_time.history
-#     step_metrics["sent_count"] = sent_count.history
-#     # training scores and loss
-#     step_metrics["lr"] = lrs.history
-#     step_metrics["score"] = scores.history
-#     step_metrics["loss_avg"] = losses.avg_history
-#     step_metrics["loss"] = losses.history
-
-#     # step_metrics["eoe_val_score"] = eoe_val_score
-#     # step_metrics["eoe_val_loss"] = eoe_val_loss
-
-#     logger.info(
-#         f"Epoch: [{epoch}/{CFG.n_epoch}] "
-#         f"Step: [{step + 1}/{total_steps}] "
-#         f"total_elapsed_time: {total_elapsed} "
-#         f"remaining: {remaining} "
-#         f"data_time: {data_time.val:.4f} "
-#         f"elapsed_batch_time: {batch_time.val:.4f} "
-#         f"sent_count_s: {(sent_count.avg / batch_time.avg):.4f} "
-#         f"batch_loss: {losses.val:.4f} "
-#         f"batch_avg_loss: {losses.avg:.4f} "
-#         f"score: {scores.val:.4f} ({scores.avg:.4f}) "
-#     )
-
-#     # # TensorBoard logging for steps
-#     # for name, value in step_metrics.items():
-#     #     if isinstance(value, (int, float)):
-#     #         self.tb_writer.add_scalar(f'step/{name}', value, self.global_step)
-
-#     # CSV logging for steps
-#     step_log_path = CFG.log_dir / "step_metrics.csv"
-#     step_df = pd.DataFrame([step_metrics])
-
-#     if step_log_path.exists():
-#         step_df.to_csv(step_log_path, mode="a", header=False, index=False)
-#     else:
-#         step_df.to_csv(step_log_path, index=False)
-
-
 if __name__ == "__main__":
     CFG = Config()
     X = torch.randn(
@@ -734,7 +647,7 @@ if __name__ == "__main__":
 
     class DummyClass: """Empty class for testing"""
         
-    control = DummyClass()
+    control = TrainerControl() 
     early_stopping_callback.on_training_start(args, state=metrics_callback.state, control=control)
     
     for i in range(CFG.n_epoch):

@@ -6,7 +6,7 @@ from typing import List, Optional
 import pandas as pd
 
 from tabular_reusable_assets.metrics.training_metrics import TrainingMetrics
-from tabular_reusable_assets.trainers.callbacks.base_callback import TrainerCallback
+from tabular_reusable_assets.trainers.callbacks.trainer_callback import TrainerCallback
 from tabular_reusable_assets.trainers.states.trainer_state import TrainerState
 from tabular_reusable_assets.utils.logger import default_logger as logger
 from tabular_reusable_assets.utils.utils import timeStat

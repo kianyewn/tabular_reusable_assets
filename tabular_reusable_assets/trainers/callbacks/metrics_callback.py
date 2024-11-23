@@ -6,8 +6,8 @@ from typing import List, Optional
 import pandas as pd
 
 from tabular_reusable_assets.metrics.training_metrics import TrainingMetrics
-from tabular_reusable_assets.trainers.callbacks.trainer_callback import TrainerCallback
-from tabular_reusable_assets.trainers.states.trainer_state import TrainerState
+from tabular_reusable_assets.trainers.callbacks.trainer_callback import TrainerCallback, TrainerState
+# from tabular_reusable_assets.trainers.states.trainer_state import TrainerState
 from tabular_reusable_assets.utils.logger import default_logger as logger
 from tabular_reusable_assets.utils.utils import timeStat
 
@@ -32,6 +32,7 @@ class MetricsCallback(TrainerCallback):
         log_dir: Path,
         experiment_name: str,
         store_history: bool = False,
+        state: TrainerState = None,
     ) -> None:
         self.store_history = store_history
         # self.metrics = {}
@@ -47,7 +48,7 @@ class MetricsCallback(TrainerCallback):
         )
 
         # Trainer State
-        self.state = TrainerState()
+        self.state = state 
 
         # storeage for all metircs
         self.batch_metrics_history = []

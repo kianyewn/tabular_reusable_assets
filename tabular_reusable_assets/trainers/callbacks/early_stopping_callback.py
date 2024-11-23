@@ -5,7 +5,7 @@ import numpy as np
 from tabular_reusable_assets.trainers.trainer_utils import IntervalStrategy
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
-from .base_callback import TrainerCallback
+from .trainer_callback import TrainerCallback
 
 
 class EarlyStoppingCallback(TrainerCallback):
@@ -46,7 +46,7 @@ class EarlyStoppingCallback(TrainerCallback):
         else:
             self.early_stopping_patience_counter += 1
 
-    def on_training_start(self, args, state, control, **kwargs):
+    def on_train_begin(self, args, state, control, **kwargs):
         assert (
             args.load_best_model_at_end
         ), "EarlyStoppingCallback requires load_best_model_at_end=True"

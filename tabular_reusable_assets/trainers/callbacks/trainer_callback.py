@@ -1,11 +1,60 @@
+import json
+import time
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, Optional
 
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
 
 class TrainerCallback(ABC):
     """Abstract base class for callbacks"""
+
+    def on_init_end(self):
+        pass
+
+    def on_traing_begin(self):
+        pass
+
+    def on_train_end(self):
+        pass
+
+    def on_epoch_begin(self):
+        pass
+
+    def on_epoch_end(self):
+        pass
+
+    def on_step_begin(self):
+        pass
+
+    def on_pre_optimizer_step(self):
+        pass
+
+    def on_optimizer_step(self):
+        pass
+
+    def on_substep_end(self):
+        pass
+
+    def on_step_end(self):
+        pass
+
+    def on_evalaute(self):
+        pass
+
+    def on_predict(self):
+        pass
+
+    def on_save(self):
+        pass
+
+    def on_log(self):
+        pass
+
+    def on_prediction_step(self):
+        pass
 
     def on_training_start(self):
         pass
@@ -14,15 +63,6 @@ class TrainerCallback(ABC):
         pass
 
     def on_epoch_start(self):
-        pass
-
-    def on_epoch_end(self, epoch: int, logs: dict = None):
-        pass
-
-    def on_batch_start(self, batch: int, logs: dict = None):
-        pass
-
-    def on_batch_end(self, batch: int, logs: dict = None):
         pass
 
 
@@ -78,6 +118,96 @@ class TrainerControl:
             },
             "attributes": {},
         }
+
+
+@dataclass
+class TrainerState:
+    """
+    State of the trainer
+    """
+
+    # Training progress
+    epoch: int = 0
+    global_step: int = 0
+
+    # Best metrics tracking
+    best_loss: float = float("inf")
+    best_score: float = float("-inf")
+    best_metric: float = float("-inf")
+    best_model_path: Optional[str] = None
+
+    # Timing
+    epoch_start_time: float = field(default_factory=time.time)
+    training_start_time: float = field(default_factory=time.time)
+
+    # Early stopping
+    patience: int = 5
+    no_improvement_count: int = 0
+    should_stop: bool = True
+
+    extra_state: Dict[str, any] = field(default_factory=dict)
+
+    def update_best_metrics(
+        self, current_loss: float, current_score: float, model_path: str
+    ) -> None:
+        """Update best metrics and return true if improved"""
+        improved = False
+
+        if current_loss < self.best_loss:
+            self.best_loss = current_loss
+            improved = True
+
+        if current_score > self.best_score:
+            self.best_score = current_score
+            improved = True
+
+        if improved:
+            self.no_improvement_count = 0
+            if model_path:
+                self.model_path = model_path
+
+        else:
+            self.no_improvement_count += 1
+
+        self.should_stop = self.no_improvemnt_count >= self.patience
+        return improved
+
+    def new_epoch(self):
+        """Reset state for new epoch"""
+        self.epoch += 1
+        self.epoch_start_time = time.time()
+
+    def get_training_time(self) -> float:
+        """Get total training time in seconds"""
+        return time.time() - self.training_start_time
+
+    def get_epoch_processing_time(self) -> float:
+        """Get the total training time"""
+        return time.time() - self.epoch_start_time
+
+    def update_global_step(self):
+        self.global_step += 1
+
+    def save(self, path: Path):
+        """Save sate to JSON"""
+        state_dict = {
+            "epoch": self.epoch,
+            "global_step": self.global_step,
+            "best_loss": self.best_loss,
+            "best_score": self.best_score,
+            "best_model_path": self.best_model_path,
+            "no_improvement_count": self.no_improvement_count,
+            "extra_state": self.extra_state,
+        }
+        with open(path, "w") as f:
+            json.dump(state_dict, f, indent=2)
+
+    @classmethod
+    def load(cls, path: Path) -> "TrainerState":
+        """Load state from json"""
+        with open(path, "r") as f:
+            state_dict = json.load(f)
+        return cls(**state_dict)
 
 
 class CallbackHandler(TrainerCallback):
@@ -139,54 +269,53 @@ class CallbackHandler(TrainerCallback):
         return self.call_event("on_train_begin", args, state, control)
 
     def on_train_start(self, args, state, control, **kwargs):
-        return self.call_event(
-            '"on_train_start', args, state, control, **kwargs)
+        return self.call_event('"on_train_start', args, state, control, **kwargs)
 
     def on_train_end(self, args, state, control):
-        return self.call_event('on_train_end', args, state, control)
-    
+        return self.call_event("on_train_end", args, state, control)
+
     def on_epoch_begin(self, args, state, control):
         control.should_epoch_stop = False
-        return self.call_event('on_epoch_begin', args, state, control)
-    
+        return self.call_event("on_epoch_begin", args, state, control)
+
     def on_epoch_end(self, args, state, control):
-        return self.call_event('on_epoch_end', args, state, control)
-    
+        return self.call_event("on_epoch_end", args, state, control)
+
     def on_step_begin(self, args, state, control):
-       control.should_log = False
-       control.should_evaluate = False
-       control.should_save = False
-       return self.call_event('on_step_begin', args, state, control)
+        control.should_log = False
+        control.should_evaluate = False
+        control.should_save = False
+        return self.call_event("on_step_begin", args, state, control)
 
     def on_pre_optimizer_step(self, args, state, control):
-        return self.call_event('on_pre_optimizer_step', args, state, control)
+        return self.call_event("on_pre_optimizer_step", args, state, control)
 
     def on_optimizer_step(self, args, state, control):
-        return self.call_evnet['on_optimizer_step',args, state, control]
+        return self.call_evnet["on_optimizer_step", args, state, control]
 
     def on_substep_end(self, args, state, control):
         return self.call_event("on_step_end", args, state, control)
-    
+
     def on_step_end(self, args, state, control):
-        return self.call_event('on_step_end', args, state, control)
+        return self.call_event("on_step_end", args, state, control)
 
     def on_evaluate(self, args, state, control, metrics):
         control.should_evaluate = False
-        return self.call_event('on_evaluate', args, state, control, metrics=metrics)
-    
+        return self.call_event("on_evaluate", args, state, control, metrics=metrics)
+
     def on_predict(self, args, state, control, metrics):
-        return self.call_event('on_predict', args, state, control, metrics=metrics) 
+        return self.call_event("on_predict", args, state, control, metrics=metrics)
 
     def on_save(self, args, state, control):
         control.should_save = False
-        return self.call_event('on_save', args, state, control)
-    
+        return self.call_event("on_save", args, state, control)
+
     def on_log(self, args, state, control, logs):
         control.should_log = False
-        return self.call_event('on_log', args, state, control, logs=logs)
-        
+        return self.call_event("on_log", args, state, control, logs=logs)
+
     def on_prediction_step(self, args, state, control):
-        return self.call_event('on_prediction_step', args, state, control)
+        return self.call_event("on_prediction_step", args, state, control)
 
     def call_event(self, event, args, state, control, **kwargs):
         for callback in self.callbacks:

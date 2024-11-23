@@ -11,58 +11,58 @@ from tabular_reusable_assets.utils.logger import default_logger as logger
 class TrainerCallback(ABC):
     """Abstract base class for callbacks"""
 
-    def on_init_end(self):
+    def on_init_end(self, *args, **kwargs):
         pass
 
-    def on_traing_begin(self):
+    def on_train_begin(self,*args, **kwargs):
         pass
 
-    def on_train_end(self):
+    def on_train_end(self, *args, **kwargs):
         pass
 
-    def on_epoch_begin(self):
+    def on_epoch_begin(self, *args, **kwargs):
         pass
 
-    def on_epoch_end(self):
+    def on_epoch_end(self, *args, **kwargs):
         pass
 
-    def on_step_begin(self):
+    def on_step_begin(self, *args, **kwargs):
         pass
 
-    def on_pre_optimizer_step(self):
+    def on_pre_optimizer_step(self, *args, **kwargs):
         pass
 
-    def on_optimizer_step(self):
+    def on_optimizer_step(self, *args, **kwargs):
         pass
 
-    def on_substep_end(self):
+    def on_substep_end(self, *args, **kwargs):
         pass
 
-    def on_step_end(self):
+    def on_step_end(self, *args, **kwargs):
         pass
 
-    def on_evalaute(self):
+    def on_evaluate(self,*args, **kwargs):
         pass
 
-    def on_predict(self):
+    def on_predict(self, *args, **kwargs):
         pass
 
-    def on_save(self):
+    def on_save(self,*args, **kwargs):
         pass
 
-    def on_log(self):
+    def on_log(self, *args, **kwargs):
         pass
 
-    def on_prediction_step(self):
+    def on_prediction_step(self, *args, **kwargs):
         pass
 
-    def on_training_start(self):
+    def on_training_start(self, *args, **kwargs):
         pass
 
-    def on_training_end(self):
+    def on_training_end(self, *args, **kwargs):
         pass
 
-    def on_epoch_start(self):
+    def on_epoch_start(self, *args, **kwargs):
         pass
 
 

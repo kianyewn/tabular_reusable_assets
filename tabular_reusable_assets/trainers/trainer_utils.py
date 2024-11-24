@@ -29,6 +29,8 @@ class SaveStrategy(ExplicitEnum):
 
 
 class EvaluationStrategy(ExplicitEnum):
+    """Deprecated"""
+
     NO = "no"
     STEPS = "steps"
     EPOCH = "epoch"

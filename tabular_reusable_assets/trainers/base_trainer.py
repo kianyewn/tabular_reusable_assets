@@ -24,10 +24,15 @@ from torch.optim.lr_scheduler import LambdaLR
 from tabular_reusable_assets.config.training_arguments import TrainingArguments
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
-from .callbacks.base_callback import TrainerCallback
 from .callbacks.early_stopping_callback import EarlyStoppingCallback
 from .callbacks.metrics_callback import MetricsCallback
-from .callbacks.trainer_callback import  TrainerControl
+from .callbacks.trainer_callback import (
+    CallbackHandler,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+    DefaultFlowCallback
+)
 
 seed = 90
 torch.manual_seed(seed)
@@ -256,12 +261,16 @@ def train(
     epoch,
     metrics_callback: TrainerCallback,
     callbacks: List[TrainerCallback] = None,
+    callback_handler: CallbackHandler = None,
+    args: TrainingArguments = None,
+    state: TrainerState = None,
+    control: TrainerControl = None,
 ):
     model.train()
 
     end = time.time()
     global_step = 0
-    total_steps = len(train_dataloader)
+    steps_in_epoch = len(train_dataloader)
 
     for step, (bx, by) in enumerate(train_dataloader):
         # Measure data loading time
@@ -273,11 +282,16 @@ def train(
         # Model out
         out, loss = model(bx, by)
 
+        callback_handler.on_step_begin(args, state, control)
+        control = callback_handler.on_pre_optimizer_step(args, state, control)
+
         # without gradient accumulation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         # scheduler.step()
+
+        control = callback_handler.on_optimizer_step(args, state, control)
 
         # Grad checks
         grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -293,7 +307,7 @@ def train(
 
         batch_metrics = {
             "epoch": epoch,  # current epoch
-            "total_steps": total_steps,  # total number of steps
+            "total_steps": steps_in_epoch,  # total number of steps
             "data_time": data_time,  # track time taken to load a single batch of data
             "batch_time": time.time() - end,  # track time taken for a single batch
             "sent_count": {
@@ -305,12 +319,14 @@ def train(
             "grad_values": grad_norm,  # track gradients
             "lrs": optimizer.param_groups[0]["lr"],  # track learning rate
         }
-        metrics_callback.on_batch_end(batch=step, logs=batch_metrics)
-
+        metrics_callback.on_step_end(batch=step, logs=batch_metrics)
         end = time.time()
-        global_step += 1
+        
+        state.global_step += 1
+        state.epoch = epoch + (step + 1) / steps_in_epoch
+        control = callback_handler.on_step_end(args, state, control)
 
-    metrics_callback.on_training_end()
+    metrics_callback.on_train_end()
 
     return {
         "losses": 1,
@@ -384,6 +400,7 @@ def validate(model, val_dataloader, store_history=True):
         scores.update(score, bx.shape[0])
         # keep track of samples sent
         sent_count.update(bx.shape[0], n=1)
+
         # keep track of time taken to process a single batch
         batch_time.update(time.time() - end, n=1)
         end = time.time()
@@ -564,6 +581,17 @@ def reset_log_step():
         os.remove(Path(CFG.log_dir) / "step_metrics.csv")
 
 
+def _maybe_log_save_evaluate(
+    args, state, control, loss, gradnorm, model, epoch, optimizer, lr_scheduler
+):
+    if control.should_log:
+        print("should log here")
+
+    if control.should_save:
+        print("should_save_here")
+    return
+
+
 if __name__ == "__main__":
     CFG = Config()
     X = torch.randn(
@@ -587,6 +615,7 @@ if __name__ == "__main__":
 
     # Prepare optimizer
     param_optimizer = list(model.named_parameters())
+
     # do not use weight decay for biases and layernorms. Weight decay is L2 norm
     no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
 
@@ -616,6 +645,26 @@ if __name__ == "__main__":
 
     early_stopping = EarlyStopping(patience=3, min_delta=0.001)
 
+    args = TrainingArguments(
+        logging_strategy="epoch",
+        save_strategy="epoch",
+        eval_strategy="epoch",
+        metric_for_best_model="losses",
+        greater_is_better=False,
+        logging_steps=10,
+    )
+    state = TrainerState()
+    control = TrainerControl()
+
+    early_stopping_callback = EarlyStoppingCallback()
+    callbacks = [DefaultFlowCallback(), early_stopping_callback]
+    callback_handler = CallbackHandler(
+        callbacks, model, processing_class=None, optimizer=optimizer, lr_scheduler=None
+    )
+    # callback_handler.add_callback()
+
+    control = callback_handler.on_train_begin(args, state, control)
+
     metrics_callback = MetricsCallback(
         metrics_to_track=[
             "losses",
@@ -629,30 +678,19 @@ if __name__ == "__main__":
         log_dir=CFG.log_dir,
         experiment_name=CFG.experiment_name,
         store_history=True,
+        state=state,
     )
 
-    args = TrainingArguments(
-        logging_strategy="epoch",
-        save_strategy="epoch",
-        eval_strategy="epoch",
-        metric_for_best_model="losses",
-        greater_is_better=False,
-    )
-
-    early_stopping_callback = EarlyStoppingCallback()
-    
     # initialize metric callback
     metrics_callback.on_training_start()
 
+    early_stopping_callback.on_train_begin(args, state=state, control=control)
 
-    class DummyClass: """Empty class for testing"""
-        
-    control = TrainerControl() 
-    early_stopping_callback.on_training_start(args, state=metrics_callback.state, control=control)
-    
     for i in range(CFG.n_epoch):
         # metrics callback
-        metrics_callback.on_epoch_start()
+        metrics_callback.on_epoch_begin()
+        control = callback_handler.on_epoch_begin(args, state, control)
+
         # you need to initialize scheduler again if using learning rate scheduler
         # num_training_steps is for when your dataset is infinite and you want to stop
 
@@ -663,6 +701,10 @@ if __name__ == "__main__":
             optimizer,
             epoch=i,
             metrics_callback=metrics_callback,
+            callback_handler=callback_handler,
+            state=state,
+            args=args,
+            control=control,
         )
 
         # Validate for single epoch
@@ -685,18 +727,36 @@ if __name__ == "__main__":
         # model_path = CFG.log_dir / f"checkpoints/model_epoch_{i}.pt"
         # torch.save(model.state_dict(), model_path)
 
+    
+        state.epoch += 1
+        
         # store training epoch logs
         metrics_callback.on_epoch_end(
             current_epoch_loss=metrics_callback.metrics.losses.avg,
             current_epoch_score=metrics_callback.metrics.scores.val,
             model_path=None,
         )
-        early_stopping_callback.on_evaluate(args, state=metrics_callback.state, control=control, metrics=metrics_callback.metrics)
+
+        early_stopping_callback.on_evaluate(
+            args,
+            state=metrics_callback.state,
+            control=control,
+            metrics=metrics_callback.metrics,
+        )
+
+
+        control = callback_handler.on_evaluate(
+            args, state, control, metrics=metrics_callback.metrics
+        )
+
+        if control.should_training_stop:
+            break
         print("==========")
 
+    control = callback_handler.on_train_end(args, state, control)
     print(early_stopping_callback.state())
-        # initialize metric callback
-    metrics_callback.on_training_end()
+    # initialize metric callback
+    metrics_callback.on_train_end()
 
     # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
     # print(key_len)

@@ -65,7 +65,7 @@ class MetricsCallback(TrainerCallback):
         self.buffer_size = 100  # Configure how many rows to store before writing
         self._metrics_buffer = []  # Initialize empty buffer
 
-    def on_training_start(self) -> None:
+    def on_train_begin(self) -> None:
         """Initialize training start time and reset log files."""
         self.training_start_time = time.time()
 
@@ -78,7 +78,7 @@ class MetricsCallback(TrainerCallback):
         # update trainer state
         self.state.training_start_time = self.training_start_time
 
-    def on_epoch_start(self) -> None:
+    def on_epoch_begin(self) -> None:
         """Initialize timing variables for new epoch."""
         self.epoch_start_time = time.time()
         self.prev_batch_end_time = time.time()
@@ -97,7 +97,7 @@ class MetricsCallback(TrainerCallback):
         self.state.epoch_end_time = time.time()
         # self.state.update_best_metrics(current_loss=current_epoch_loss, current_score=current_epoch_score, model_path=)
 
-    def on_batch_start(self, batch: int, logs: Optional[dict] = None) -> None:
+    def on_step_start(self, batch: int, logs: Optional[dict] = None) -> None:
         """Process metrics at the start of each batch.
 
         Args:
@@ -114,7 +114,7 @@ class MetricsCallback(TrainerCallback):
         
         self.state.batch_start_time = time.time()
 
-    def on_batch_end(self, batch: int, logs: Optional[dict] = None) -> None:
+    def on_step_end(self, batch: int, logs: Optional[dict] = None) -> None:
         """Process and log metrics at the end of each batch.
 
         Args:
@@ -139,7 +139,8 @@ class MetricsCallback(TrainerCallback):
                 batch_metrics_row[name] = (
                     f"{metrics_dict[name].val}({metrics_dict[name].avg})"
                 )
-
+        # print(f"metrics_dict['sent_count'].avg: {metrics_dict['sent_count'].avg}")
+        # print(f"metrics_dict['batch_time'].avg: {metrics_dict[''].avg}") 
         # Log at specific intervals
         total_steps = logs.get("total_steps", None)
         epoch = logs.get("epoch", 0)
@@ -213,7 +214,7 @@ class MetricsCallback(TrainerCallback):
         except Exception as e:
             logger.error(f"Failed to flush metrics buffer: {str(e)}")
 
-    def on_training_end(self) -> None:
+    def on_train_end(self) -> None:
         """Ensure any remaining metrics are written when training ends."""
         self._flush_metrics_buffer()
         

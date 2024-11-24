@@ -66,7 +66,7 @@ class TrainingArguments:
 
     eval_steps: int = field(
         default=10,
-        metdata={
+        metadata={
             "help": (
                 'Number of update steps between two evaluations if `eval_strategy="steps"`. Will default to the same value as `logging_steps` if not set.'
                 "Should be an integer or a float in range `[0,1)`. If smaller than 1, will be interpreted as ratio of total training steps."

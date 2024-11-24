@@ -5,6 +5,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
+from tabular_reusable_assets.config.training_arguments import TrainingArguments
+
+from tabular_reusable_assets.trainers.trainer_utils import (
+    EvaluationStrategy,
+    IntervalStrategy,
+    SaveStrategy,
+)
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
 
@@ -14,7 +21,7 @@ class TrainerCallback(ABC):
     def on_init_end(self, *args, **kwargs):
         pass
 
-    def on_train_begin(self,*args, **kwargs):
+    def on_train_begin(self, *args, **kwargs):
         pass
 
     def on_train_end(self, *args, **kwargs):
@@ -41,13 +48,13 @@ class TrainerCallback(ABC):
     def on_step_end(self, *args, **kwargs):
         pass
 
-    def on_evaluate(self,*args, **kwargs):
+    def on_evaluate(self, *args, **kwargs):
         pass
 
     def on_predict(self, *args, **kwargs):
         pass
 
-    def on_save(self,*args, **kwargs):
+    def on_save(self, *args, **kwargs):
         pass
 
     def on_log(self, *args, **kwargs):
@@ -210,6 +217,50 @@ class TrainerState:
         return cls(**state_dict)
 
 
+class DefaultFlowCallback(TrainerCallback):
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        # Log
+        if (
+            args.logging_strategy == IntervalStrategy.STEPS
+            and (state.global_step % args.logging_steps) == 0
+        ):
+            control.should_log = True
+
+        # Evaluate
+        if args.eval_strategy == IntervalStrategy.STEPS and (
+            state.global_step % args.eval_steps == 0
+        ):
+            control.should_evaluate = True
+
+        # Save
+        if args.save_strategy == SaveStrategy.STEPS and (
+            state.global_step % args.save_steps == 0
+        ):
+            control.should_save = True
+
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        if args.logging_strategy == IntervalStrategy.EPOCH:
+            control.should_log = True
+
+        if args.eval_strategy == IntervalStrategy.EPOCH:
+            control.should_evaluate = True
+
+        if args.save_strategy == SaveStrategy.EPOCH:
+            control.should_save = True
+
+
 class CallbackHandler(TrainerCallback):
     def __init__(self, callbacks, model, processing_class, optimizer, lr_scheduler):
         self.callbacks = []
@@ -291,10 +342,17 @@ class CallbackHandler(TrainerCallback):
         return self.call_event("on_pre_optimizer_step", args, state, control)
 
     def on_optimizer_step(self, args, state, control):
-        return self.call_evnet["on_optimizer_step", args, state, control]
+        return self.call_event("on_optimizer_step", args, state, control)
 
     def on_substep_end(self, args, state, control):
-        return self.call_event("on_step_end", args, state, control)
+        """
+        The on_substep_end callback is used during gradient accumulation steps in training. Here's when it's specifically used:
+        When gradient_accumulation_steps > 1, the training loop processes multiple batches before performing a gradient update step.
+        For each batch within the accumulation steps:
+        If it's NOT the final accumulation step (i.e., not time to update gradients yet), on_substep_end is called
+        If it IS the final accumulation step, on_step_end is called instead.
+        """
+        return self.call_event("on_substep_end", args, state, control)
 
     def on_step_end(self, args, state, control):
         return self.call_event("on_step_end", args, state, control)

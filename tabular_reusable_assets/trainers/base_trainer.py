@@ -28,10 +28,10 @@ from .callbacks.early_stopping_callback import EarlyStoppingCallback
 from .callbacks.metrics_callback import MetricsCallback
 from .callbacks.trainer_callback import (
     CallbackHandler,
+    DefaultFlowCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
-    DefaultFlowCallback
 )
 
 seed = 90
@@ -319,13 +319,17 @@ def train(
             "grad_values": grad_norm,  # track gradients
             "lrs": optimizer.param_groups[0]["lr"],  # track learning rate
         }
-        metrics_callback.on_step_end(batch=step, logs=batch_metrics)
+
         end = time.time()
-        
+
         state.global_step += 1
         state.epoch = epoch + (step + 1) / steps_in_epoch
+        
+        metrics_callback.on_step_end(batch=step, logs=batch_metrics)
         control = callback_handler.on_step_end(args, state, control)
-
+        
+        if control.should_save:
+            logger.info('Saving model')
     metrics_callback.on_train_end()
 
     return {
@@ -646,18 +650,20 @@ if __name__ == "__main__":
     early_stopping = EarlyStopping(patience=3, min_delta=0.001)
 
     args = TrainingArguments(
-        logging_strategy="epoch",
-        save_strategy="epoch",
-        eval_strategy="epoch",
+        logging_strategy="steps",
+        save_strategy="steps",
+        eval_strategy="steps",
         metric_for_best_model="losses",
         greater_is_better=False,
         logging_steps=10,
+        save_steps=10,
     )
     state = TrainerState()
     control = TrainerControl()
 
     early_stopping_callback = EarlyStoppingCallback()
     callbacks = [DefaultFlowCallback(), early_stopping_callback]
+
     callback_handler = CallbackHandler(
         callbacks, model, processing_class=None, optimizer=optimizer, lr_scheduler=None
     )
@@ -727,9 +733,9 @@ if __name__ == "__main__":
         # model_path = CFG.log_dir / f"checkpoints/model_epoch_{i}.pt"
         # torch.save(model.state_dict(), model_path)
 
-    
         state.epoch += 1
-        
+        control = callback_handler.on_epoch_end(args, state, control)
+
         # store training epoch logs
         metrics_callback.on_epoch_end(
             current_epoch_loss=metrics_callback.metrics.losses.avg,
@@ -743,7 +749,6 @@ if __name__ == "__main__":
             control=control,
             metrics=metrics_callback.metrics,
         )
-
 
         control = callback_handler.on_evaluate(
             args, state, control, metrics=metrics_callback.metrics
@@ -768,195 +773,3 @@ if __name__ == "__main__":
 
     # train_logger.save()
     # d = train_logger.get_across_epoch_logs(CFG.within_epoch_logs_path)
-
-
-# class Trainer:
-#     def __init__(self, config: TrainingConfig):
-#         self.config = config
-#         self.model = None
-#         self.optimizer = None
-#         self.scheduler = None
-#         self.scaler = torch.cuda.amp.GradScaler()
-#         self.early_stopping = EarlyStopping(
-#             patience=config.early_stopping_patience,
-#             mode="max",  # Since we're monitoring AUC score
-#         )
-#         self.best_model_state = None
-#         self.setup_logging()
-
-#     def setup_logging(self):
-#         """Initialize logging mechanisms"""
-#         # Create logging directory with timestamp
-#         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#         self.log_dir = (
-#             Path(self.config.log_dir) / self.config.experiment_name / timestamp
-#         )
-#         self.log_dir.mkdir(parents=True, exist_ok=True)
-
-#         # Initialize loggers
-#         self.console_logger = logging.getLogger(__name__)
-#         self.tb_writer = SummaryWriter(log_dir=str(self.log_dir / "tensorboard"))
-
-#     def train(self, train_loader, val_loader):
-#         """Main training loop with early stopping"""
-#         self.model = Model(self.config).to(self.config.device)
-#         self.optimizer = self._create_optimizer()
-#         self.scheduler = self._create_scheduler(len(train_loader))
-
-#         for epoch in range(self.config.n_epoch):
-#             # Training phase
-#             train_metrics = self._train_epoch(train_loader, epoch)
-
-#             # Validation phase
-#             val_metrics = self._validate(val_loader, epoch)
-
-#             # Log metrics
-#             self._log_epoch(epoch, train_metrics, val_metrics)
-
-#             # Early stopping check
-#             if self.early_stopping(epoch, val_metrics["score"]):
-#                 self.console_logger.info(
-#                     f"Early stopping triggered. Best score: {self.early_stopping.best_score:.4f} "
-#                     f"at epoch {self.early_stopping.best_epoch}"
-#                 )
-#                 # Restore best model
-#                 self.model.load_state_dict(self.best_model_state)
-#                 break
-
-#             # Save best model
-#             if val_metrics["score"] == self.early_stopping.best_score:
-#                 self.best_model_state = copy.deepcopy(self.model.state_dict())
-#                 self.save_checkpoint(
-#                     self.log_dir / "best_model.pt", epoch, val_metrics["score"]
-#                 )
-
-#         return {
-#             "best_score": self.early_stopping.best_score,
-#             "best_epoch": self.early_stopping.best_epoch,
-#         }
-
-#     def save_checkpoint(self, path: Path, epoch: int, score: float):
-#         """Save model checkpoint"""
-#         checkpoint = {
-#             "epoch": epoch,
-#             "model_state_dict": self.model.state_dict(),
-#             "optimizer_state_dict": self.optimizer.state_dict(),
-#             "scheduler_state_dict": self.scheduler.state_dict()
-#             if self.scheduler
-#             else None,
-#             "score": score,
-#             "config": self.config.__dict__,
-#         }
-#         torch.save(checkpoint, path)
-#         self.console_logger.info(f"Saved checkpoint to {path}")
-
-#     def load_checkpoint(self, path: Path):
-#         """Load model checkpoint"""
-#         checkpoint = torch.load(path)
-#         self.model.load_state_dict(checkpoint["model_state_dict"])
-#         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-#         if self.scheduler and checkpoint["scheduler_state_dict"]:
-#             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-#         return checkpoint["epoch"], checkpoint["score"]
-
-
-# def _log_epoch(self, epoch: int, train_metrics: dict, val_metrics: dict):
-#     """
-#     Log metrics for the epoch to console, TensorBoard, and CSV.
-
-#     Args:
-#         epoch: Current epoch number
-#         train_metrics: Dictionary containing training metrics
-#         val_metrics: Dictionary containing validation metrics
-#     """
-#     # Prepare metrics dictionary
-#     metrics = {
-#         "epoch": epoch,
-#         "lr": self.optimizer.param_groups[0]["lr"],
-#         "train_loss": train_metrics["loss"],
-#         "train_score": train_metrics["score"],
-#         "val_loss": val_metrics["loss"],
-#         "val_score": val_metrics["score"],
-#         "batch_time": train_metrics["batch_time"].avg,
-#         "data_time": train_metrics["data_time"].avg,
-#         "samples_per_sec": train_metrics["sent_count"].sum
-#         / train_metrics["batch_time"].sum,
-#     }
-
-#     # 1. Console Logging
-#     self.console_logger.info(
-#         f"\nEpoch [{epoch}/{self.config.n_epoch}] "
-#         f"LR: {metrics['lr']:.6f}\n"
-#         f"Train Loss: {metrics['train_loss']:.4f} | "
-#         f"Train Score: {metrics['train_score']:.4f}\n"
-#         f"Val Loss: {metrics['val_loss']:.4f} | "
-#         f"Val Score: {metrics['val_score']:.4f}\n"
-#         f"Best Val Score: {self.early_stopping.best_score:.4f} "
-#         f"(epoch {self.early_stopping.best_epoch})\n"
-#         f"Batch time: {metrics['batch_time']:.3f}s | "
-#         f"Data time: {metrics['data_time']:.3f}s | "
-#         f"Samples/sec: {metrics['samples_per_sec']:.1f}\n"
-#         + (
-#             "★ New best score! "
-#             if metrics["val_score"] == self.early_stopping.best_score
-#             else ""
-#         )
-#     )
-
-#     # 2. TensorBoard Logging
-#     # Scalars
-#     for name, value in metrics.items():
-#         if isinstance(value, (int, float)):
-#             self.tb_writer.add_scalar(f"epoch/{name}", data=value, step=epoch)
-
-#     # Learning rate
-#     self.tb_writer.add_scalar("epoch/learning_rate", data=metrics["lr"], step=epoch)
-
-#     # Gradients (optional)
-#     if hasattr(self, "log_gradients") and self.log_gradients:
-#         for name, param in self.model.named_parameters():
-#             if param.grad is not None:
-#                 self.tb_writer.add_histogram(
-#                     f"gradients/{name}", data=param.grad, step=epoch
-#                 )
-
-#     # 3. CSV Logging
-#     csv_path = self.log_dir / "metrics.csv"
-#     csv_metrics = pd.DataFrame([metrics])
-
-#     if csv_path.exists():
-#         # Append to existing CSV
-#         csv_metrics.to_csv(csv_path, mode="a", header=False, index=False)
-#     else:
-#         # Create new CSV
-#         csv_metrics.to_csv(csv_path, index=False)
-
-#     # 4. Update Training Logger (if using)
-#     if hasattr(self, "training_logger"):
-#         # self.training_logger.update_epoch_logs(
-#         #     epoch_num=epoch,
-#         #     cur_lr=metrics["lr"],
-#         #     train_loss=metrics["train_loss"],
-#         #     train_score=metrics["train_score"],
-#         #     valid_loss=metrics["val_loss"],
-#         #     valid_score=metrics["val_score"],
-#         # )
-
-#         self.training_logger.update_within_epoch_logs(
-#             epoch_num=epoch,
-#             losses=train_metrics["losses"],
-#             lrs=train_metrics["lrs"],
-#             global_step=train_metrics["global_step"],
-#             batch_time=train_metrics["batch_time"],
-#             data_time=train_metrics["data_time"],
-#             sent_count=train_metrics["sent_count"],
-#             scores=train_metrics["scores"],
-#             eoe_val_loss=metrics["val_loss"],
-#             eoe_val_score=metrics["val_score"],
-#         )
-
-#         # Save training logger periodically
-#         if epoch % self.config.save_freq == 0 or epoch == self.config.n_epoch - 1:
-#             self.training_logger.save()
-
-#     return metrics

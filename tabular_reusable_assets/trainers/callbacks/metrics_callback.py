@@ -6,7 +6,11 @@ from typing import List, Optional
 import pandas as pd
 
 from tabular_reusable_assets.metrics.training_metrics import TrainingMetrics
-from tabular_reusable_assets.trainers.callbacks.trainer_callback import TrainerCallback, TrainerState
+from tabular_reusable_assets.trainers.callbacks.trainer_callback import (
+    TrainerCallback,
+    TrainerState,
+)
+
 # from tabular_reusable_assets.trainers.states.trainer_state import TrainerState
 from tabular_reusable_assets.utils.logger import default_logger as logger
 from tabular_reusable_assets.utils.utils import timeStat
@@ -48,7 +52,7 @@ class MetricsCallback(TrainerCallback):
         )
 
         # Trainer State
-        self.state = state 
+        self.state = state
 
         # storeage for all metircs
         self.batch_metrics_history = []
@@ -82,9 +86,9 @@ class MetricsCallback(TrainerCallback):
         """Initialize timing variables for new epoch."""
         self.epoch_start_time = time.time()
         self.prev_batch_end_time = time.time()
-        
+
         # update epoch state
-        self.state.epoch += 1
+        # self.state.epoch += 1
         self.state.epoch_start_time = self.epoch_start_time
 
     def on_epoch_end(
@@ -111,7 +115,7 @@ class MetricsCallback(TrainerCallback):
                 # Update metrics name
                 self.metrics.update(name, val=value, n=n)
             return
-        
+
         self.state.batch_start_time = time.time()
 
     def on_step_end(self, batch: int, logs: Optional[dict] = None) -> None:
@@ -140,7 +144,7 @@ class MetricsCallback(TrainerCallback):
                     f"{metrics_dict[name].val}({metrics_dict[name].avg})"
                 )
         # print(f"metrics_dict['sent_count'].avg: {metrics_dict['sent_count'].avg}")
-        # print(f"metrics_dict['batch_time'].avg: {metrics_dict[''].avg}") 
+        # print(f"metrics_dict['batch_time'].avg: {metrics_dict[''].avg}")
         # Log at specific intervals
         total_steps = logs.get("total_steps", None)
         epoch = logs.get("epoch", 0)
@@ -188,8 +192,8 @@ class MetricsCallback(TrainerCallback):
         self._metrics_buffer.append(batch_metrics_row)
         if len(self._metrics_buffer) >= self.buffer_size:
             self._flush_metrics_buffer()
-        
-        self.state.global_step += 1
+
+        # self.state.global_step += 1
         self.state.best_metric = max(self.state.best_metric, metrics_dict["losses"].avg)
         return
 
@@ -217,7 +221,7 @@ class MetricsCallback(TrainerCallback):
     def on_train_end(self) -> None:
         """Ensure any remaining metrics are written when training ends."""
         self._flush_metrics_buffer()
-        
+
         # Update state
         self.state.training_end_time = time.time()
 

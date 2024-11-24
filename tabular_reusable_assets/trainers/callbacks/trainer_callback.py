@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import time
 from abc import ABC
@@ -5,8 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
-from tabular_reusable_assets.config.training_arguments import TrainingArguments
+from tqdm.auto import tqdm
 
+from tabular_reusable_assets.config.training_arguments import TrainingArguments
 from tabular_reusable_assets.trainers.trainer_utils import (
     EvaluationStrategy,
     IntervalStrategy,
@@ -136,6 +138,7 @@ class TrainerState:
     # Training progress
     epoch: int = 0
     global_step: int = 0
+    max_steps: int = 0
 
     # Best metrics tracking
     best_loss: float = float("inf")
@@ -209,6 +212,9 @@ class TrainerState:
         with open(path, "w") as f:
             json.dump(state_dict, f, indent=2)
 
+    def to_dict(self):
+        return dataclasses.asdict(self)
+
     @classmethod
     def load(cls, path: Path) -> "TrainerState":
         """Load state from json"""
@@ -261,6 +267,41 @@ class DefaultFlowCallback(TrainerCallback):
             control.should_save = True
 
 
+class ProgressCallback(TrainerCallback):
+    def __init__(self):
+        self.training_bar = None
+
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        self.training_bar = tqdm(total=state.max_steps, dynamic_ncols=True, leave=True, position=0)
+        self.current_step = 0
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        self.training_bar.update(state.global_step - self.current_step)
+        self.current_step = state.global_step
+
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        self.training_bar.close()
+        self.training_bar = None
+
+
 class CallbackHandler(TrainerCallback):
     def __init__(self, callbacks, model, processing_class, optimizer, lr_scheduler):
         self.callbacks = []
@@ -289,7 +330,7 @@ class CallbackHandler(TrainerCallback):
         if isinstance(callback, type):
             for cb in self.callbacks:
                 if isinstance(cb, callback):
-                    self.callbacks.rmeove(cb)
+                    self.callbacks.remove(cb)
                     return cb
         else:
             for cb in self.callbacks:
@@ -333,7 +374,7 @@ class CallbackHandler(TrainerCallback):
         return self.call_event("on_epoch_end", args, state, control)
 
     def on_step_begin(self, args, state, control):
-        control.should_log = False
+        control.should_log = False  # pre- reinitializing the control before control gets edited by callbacks
         control.should_evaluate = False
         control.should_save = False
         return self.call_event("on_step_begin", args, state, control)

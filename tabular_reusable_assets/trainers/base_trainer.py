@@ -32,6 +32,7 @@ from .callbacks.trainer_callback import (
     TrainerCallback,
     TrainerControl,
     TrainerState,
+    ProgressCallback,
 )
 
 seed = 90
@@ -324,12 +325,20 @@ def train(
 
         state.global_step += 1
         state.epoch = epoch + (step + 1) / steps_in_epoch
-        
-        metrics_callback.on_step_end(batch=step, logs=batch_metrics)
+
+
         control = callback_handler.on_step_end(args, state, control)
-        
+        metrics_callback.on_step_end(batch=step, logs=batch_metrics)
+
         if control.should_save:
-            logger.info('Saving model')
+            logger.info("Saving model")
+
+        if control.should_evaluate:
+            logger.info("Evaluating model")
+
+        if control.should_log:
+            logger.info("Logging model")
+
     metrics_callback.on_train_end()
 
     return {
@@ -659,16 +668,18 @@ if __name__ == "__main__":
         save_steps=10,
     )
     state = TrainerState()
+    state.max_steps = len(train_dataloader) * CFG.n_epoch
     control = TrainerControl()
 
     early_stopping_callback = EarlyStoppingCallback()
-    callbacks = [DefaultFlowCallback(), early_stopping_callback]
+    callbacks = [DefaultFlowCallback(), ProgressCallback(), early_stopping_callback]
 
     callback_handler = CallbackHandler(
         callbacks, model, processing_class=None, optimizer=optimizer, lr_scheduler=None
     )
     # callback_handler.add_callback()
-
+    callback_handler.pop_callback(ProgressCallback)
+    
     control = callback_handler.on_train_begin(args, state, control)
 
     metrics_callback = MetricsCallback(
@@ -756,12 +767,15 @@ if __name__ == "__main__":
 
         if control.should_training_stop:
             break
-        print("==========")
+
+        # time.sleep(2)
+        # logger.info("==========")
 
     control = callback_handler.on_train_end(args, state, control)
     print(early_stopping_callback.state())
     # initialize metric callback
     metrics_callback.on_train_end()
+    logger.info(f"Trainer State: {state.to_dict()}")
 
     # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
     # print(key_len)

@@ -22,6 +22,33 @@ class TrainingMetrics:
     grad_values: Optional[AverageMeter] = None
     lrs: Optional[AverageMeter] = None
 
+    _custom_metrics: dict = field(default_factory=list)
+    
+    def register_metric(self, name: str, store_avg_history: bool = False):
+        """Register a new custom metric.
+        
+        Args:
+            name: Name of the metric to register
+            store_avg_history: Whether to store average history for this metric
+        """
+
+        if hasattr(self, name):
+            logger.warning(f"Metric: `{name}` already exists as a default metric")
+            
+        self._custom_metrics[name] = AverageMeter(
+            store_history= self.store_history,
+            store_avg_history = store_avg_history
+        )
+        if name not in self.enlabled_metrics:
+            self.enabled_metrics.append(name)
+
+    def __getattr__(self, name: str) -> Optional[AverageMeter]:
+        """Allow access to custom metrics as if they were regular attributes"""
+        if name in self._custom_metrics:
+            return self._custom_metrics[name]
+        raise AttributeError(f"`TrainingMetrics` has no attribute `{name}`")
+        
+            
     def __post_init__(self):
         """Initialize only the enabled metrics"""
         if len(self.enabled_metrics) > 0:
@@ -47,12 +74,15 @@ class TrainingMetrics:
         for metric_name in self.enabled_metrics:
             if hasattr(self, metric_name):
                 yield getattr(self, metric_name)
+        # yield custom metrics
+        for metric in self._custom_metrics.values():
+            yield metric
 
     def to_dict(self):
-        return {
-            metric_name: getattr(self, metric_name)
-            for metric_name in self.enabled_metrics
-        }
+
+        result = {metric_name: getattr(self, metric_name) for metric_name in self.enabled_metrics}
+        result.update(self._custom_metrics)
+        return result
 
     def init_before_epoch(self):
         self.start = self.end = time.time()

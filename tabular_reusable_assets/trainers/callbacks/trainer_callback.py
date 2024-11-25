@@ -4,7 +4,7 @@ import time
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from tqdm.auto import tqdm
 
@@ -155,7 +155,38 @@ class TrainerState:
     no_improvement_count: int = 0
     should_stop: bool = True
 
+    log_history: List[Dict[str, float]] = field(default_factory=list)
     extra_state: Dict[str, any] = field(default_factory=dict)
+
+    stateful_callbacks: List[ExportableState] = field(
+        default_factory=list,
+        metadata={
+            "help": "stateful_callbacks (`List[StatefulTrainerCallback]`, *optional*): "
+            "Callbacks attached to the `Trainer` that should have their states be saved or restored. "
+            "Relevent callbacks should implement a `state` and `from_state` function."
+        },
+    )
+
+    def __post_init__(self):
+        if isinstance(self.stateful_callbacks, dict):
+            pass
+        else:
+            stateful_callbacks = {}
+            for callback in self.stateful_callbacks:
+                if not isinstance(callback, ExportableState):
+                    raise TypeError(
+                        "Callbacks should inherit from `ExportableState`, but got type: `{type(callback)`}"
+                    )
+                name = callback.__class__.__name__
+                if name in self.stateful_callbacks:
+                    if not isinstance(stateful_callbacks[name], list):
+                        stateful_callbacks[name] = [stateful_callbacks[name]]
+                    stateful_callbacks[name].append(callback.state())
+
+                else:
+                    stateful_callbacks[name] = callback.state()
+
+            self.stateful_callbacks = stateful_callbacks
 
     def update_best_metrics(
         self, current_loss: float, current_score: float, model_path: str
@@ -198,7 +229,7 @@ class TrainerState:
     def update_global_step(self):
         self.global_step += 1
 
-    def save(self, path: Path):
+    def save_to_json(self, json_path: Path):
         """Save sate to JSON"""
         state_dict = {
             "epoch": self.epoch,
@@ -209,16 +240,16 @@ class TrainerState:
             "no_improvement_count": self.no_improvement_count,
             "extra_state": self.extra_state,
         }
-        with open(path, "w") as f:
+        with open(json_path, "w") as f:
             json.dump(state_dict, f, indent=2)
 
     def to_dict(self):
         return dataclasses.asdict(self)
 
     @classmethod
-    def load(cls, path: Path) -> "TrainerState":
+    def load_from_json(cls, json_path: Path) -> "TrainerState":
         """Load state from json"""
-        with open(path, "r") as f:
+        with open(json_path, "r") as f:
             state_dict = json.load(f)
         return cls(**state_dict)
 
@@ -278,7 +309,9 @@ class ProgressCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        self.training_bar = tqdm(total=state.max_steps, dynamic_ncols=True, leave=True, position=0)
+        self.training_bar = tqdm(
+            total=state.max_steps, dynamic_ncols=True, leave=True, position=0
+        )
         self.current_step = 0
 
     def on_step_end(

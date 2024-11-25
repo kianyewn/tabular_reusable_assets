@@ -11,6 +11,13 @@ from tabular_reusable_assets.utils.logger import default_logger as logger
 
 @dataclass
 class TrainingArguments:
+    output_dir: str = field(
+        default=None,
+        metadata={
+            "help": "The output directory where the model predictions and checkpoints will be written."
+        },
+    )
+
     logging_strategy: Union[IntervalStrategy, str] = field(
         default="steps", metadata="The logging strategy to use."
     )

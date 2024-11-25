@@ -29,10 +29,10 @@ from .callbacks.metrics_callback import MetricsCallback
 from .callbacks.trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    ProgressCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
-    ProgressCallback,
 )
 
 seed = 90
@@ -88,6 +88,18 @@ torch.manual_seed(seed)
 #         return cls(**config_dict)
 
 
+# Name of the files used for checkpointing
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+OPTIMIZER_NAME = "optimizer.pt"
+OPTIMIZER_NAME_BIN = "optimizer.bin"
+SCHEDULER_NAME = "scheduler.pt"
+SCALER_NAME = "scaler.pt"
+FSDP_MODEL_NAME = "pytorch_model_fsdp"
+WEIGHTS_NAME = "pytorch_model.bin"
+CONFIG_NAME = "config.json"
+
+
 @dataclass
 class Config:
     n_epoch: int = 15
@@ -118,6 +130,16 @@ class Config:
         if not os.path.exists(self.log_dir) and self.save:
             os.makedirs(self.log_dir, exist_ok=True)
             print(f"Created log directory: {self.log_dir}")
+
+    def to_dict(self):
+        dict = {}
+        for key, value in self.__dict__.items():
+            dict[key] = value
+        return dict
+
+    @classmethod
+    def from_dict(cls):
+        return cls(**dict)
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -326,9 +348,9 @@ def train(
         state.global_step += 1
         state.epoch = epoch + (step + 1) / steps_in_epoch
 
-
         control = callback_handler.on_step_end(args, state, control)
         metrics_callback.on_step_end(batch=step, logs=batch_metrics)
+        state.log_history.append(batch_metrics)
 
         if control.should_save:
             logger.info("Saving model")
@@ -439,7 +461,6 @@ def validate(model, val_dataloader, store_history=True):
                 f"avg_loss: {losses.avg:.4f} "
                 f"score: {scores.val:.4f} ({scores.avg:.4f}) "
             )
-
     predictions = torch.cat(predictions).view(-1).numpy()
     labels = torch.cat(labels).numpy()
     final_score = calculate_auc(y_pred=predictions, y_true=labels)
@@ -589,9 +610,58 @@ class EarlyStopping:
         return self.should_stop
 
 
-def reset_log_step():
-    if os.path.exists(Path(CFG.log_dir) / "step_metrics.csv"):
-        os.remove(Path(CFG.log_dir) / "step_metrics.csv")
+@dataclass
+class ModelConfig:
+    hidden_layers = [1, 2, 3]
+
+    def to_dict(self):
+        return {"hidden_layers": self.hidden_layers}
+
+    @classmethod
+    def from_dict(cls, dict):
+        return cls(**dict)
+
+
+def _save(
+    model,
+    optimizer,
+    lr_scheduler,
+    config,
+    args: TrainingArguments,
+    state: TrainerState,
+    control: TrainerControl,
+):
+    if not Path(args.output_dir).exists():
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+
+    state.stateful_callbacks["TrainerControl"] = control.state()
+    # state.stateful_callbacks['TrainingArguments'] # this is something that users will change, so dont save this.
+
+    if state:
+        state.save_to_json(Path(args.output_dir) / TRAINER_STATE_NAME)
+
+    if config:
+        torch.save(config.to_dict(), Path(args.output_dir) / CONFIG_NAME)
+
+    # Save model
+    if model:
+        torch.save(model.state_dict(), Path(args.output_dir) / WEIGHTS_NAME)
+
+    # Save Optimizer
+    if optimizer:
+        torch.save(optimizer.state_dict(), Path(args.output_dir) / OPTIMIZER_NAME)
+
+    # Save Scheduler
+    if lr_scheduler:
+        torch.save(lr_scheduler.state_dict(), Path(args.output_dir) / SCHEDULER_NAME)
+
+    # Good practice: save your training arguments together with the trained model
+    torch.save(args, Path(args.output_dir) / TRAINING_ARGS_NAME)
+    return
+
+
+def _load(model):
+    pass
 
 
 def _maybe_log_save_evaluate(
@@ -659,13 +729,14 @@ if __name__ == "__main__":
     early_stopping = EarlyStopping(patience=3, min_delta=0.001)
 
     args = TrainingArguments(
-        logging_strategy="steps",
+        logging_strategy="epoch",
         save_strategy="steps",
         eval_strategy="steps",
         metric_for_best_model="losses",
         greater_is_better=False,
         logging_steps=10,
         save_steps=10,
+        output_dir="./data/output_dir",
     )
     state = TrainerState()
     state.max_steps = len(train_dataloader) * CFG.n_epoch
@@ -679,7 +750,7 @@ if __name__ == "__main__":
     )
     # callback_handler.add_callback()
     callback_handler.pop_callback(ProgressCallback)
-    
+
     control = callback_handler.on_train_begin(args, state, control)
 
     metrics_callback = MetricsCallback(
@@ -699,7 +770,7 @@ if __name__ == "__main__":
     )
 
     # initialize metric callback
-    metrics_callback.on_training_start()
+    metrics_callback.on_train_begin()
 
     early_stopping_callback.on_train_begin(args, state=state, control=control)
 
@@ -767,6 +838,17 @@ if __name__ == "__main__":
 
         if control.should_training_stop:
             break
+
+        if control.should_save:
+            _save(
+                model,
+                optimizer,
+                lr_scheduler=None,
+                config=CFG,
+                args=args,
+                state=state,
+                control=control,
+            )
 
         # time.sleep(2)
         # logger.info("==========")

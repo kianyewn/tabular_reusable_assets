@@ -110,8 +110,8 @@ class MetricsCallback(TrainerCallback):
         """
         for name, value in logs.items():
             if name in self.metrics:
-                value = value.pop("value", None) if isinstance(value, dict) else value
-                n = value.pop("n", 1) if isinstance(value, dict) else 1
+                value = value.get("value", None) if isinstance(value, dict) else value
+                n = value.get("n", 1) if isinstance(value, dict) else 1
                 # Update metrics name
                 self.metrics.update(name, val=value, n=n)
             return

@@ -1,9 +1,9 @@
+import copy
 import json
 import os
 import sys
 import time
 from collections import defaultdict
-from copy import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
@@ -320,6 +320,7 @@ def train(
         grad_norm = torch.nn.utils.clip_grad_norm_(
             model.parameters(), CFG.max_grad_norm
         )
+
         # keep track of current scores
         with torch.no_grad():
             model.eval()
@@ -328,21 +329,26 @@ def train(
             )
             model.train()
 
+        n_batch_sample = out.shape[0]
         batch_metrics = {
             "epoch": epoch,  # current epoch
             "total_steps": steps_in_epoch,  # total number of steps
             "data_time": data_time,  # track time taken to load a single batch of data
             "batch_time": time.time() - end,  # track time taken for a single batch
             "sent_count": {
-                "value": out.shape[0],
+                "value": n_batch_sample,
                 "n": 1,
             },  # track number of samples sent
-            "losses": {"value": loss.item(), "n": out.shape[0]},  # track loss
-            "scores": {"value": score, "n": out.shape[0]},  # track score
-            "grad_values": grad_norm,  # track gradients
+            "losses": loss.item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
+            "scores": {"value": score, "n": n_batch_sample},  # track score
+            "grad_values": grad_norm.item(),  # track gradients
             "lrs": optimizer.param_groups[0]["lr"],  # track learning rate
         }
 
+        # print(batch_metrics, type(batch_metrics['sent_count']['value']), type(batch_metrics['losses']['value']), type(batch_metrics['scores']['value']))
+        
+      
+        
         end = time.time()
 
         state.global_step += 1
@@ -350,7 +356,7 @@ def train(
 
         control = callback_handler.on_step_end(args, state, control)
         metrics_callback.on_step_end(batch=step, logs=batch_metrics)
-        state.log_history.append(batch_metrics)
+
 
         if control.should_save:
             logger.info("Saving model")
@@ -362,7 +368,7 @@ def train(
             logger.info("Logging model")
 
     metrics_callback.on_train_end()
-
+    state.log_history.append(batch_metrics)
     return {
         "losses": 1,
         "lrs": 1,
@@ -660,8 +666,14 @@ def _save(
     return
 
 
-def _load(model):
-    pass
+# def _load(model, optimizer, lr_scheduler, config, args, state, control):
+#     model_path = Path(args.output_dir) / WEIGHTS_NAME
+#     optimizer_path = Path(args.output_dir) / OPTIMIZER_NAME
+#     lr_scheduler_path = Path(args.output_dir) / SCHEDULER_NAME
+#     args_path = Path(args.output_dir) / TRAINING_ARGS_NAME
+#     trainer_state_path = Path(args.output_dir) / TRAINER_STATE_NAME
+
+#     model.set_state
 
 
 def _maybe_log_save_evaluate(
@@ -730,12 +742,12 @@ if __name__ == "__main__":
 
     args = TrainingArguments(
         logging_strategy="epoch",
-        save_strategy="steps",
-        eval_strategy="steps",
+        save_strategy="epoch",
+        eval_strategy="epoch",
         metric_for_best_model="losses",
         greater_is_better=False,
         logging_steps=10,
-        save_steps=10,
+        save_steps=5,
         output_dir="./data/output_dir",
     )
     state = TrainerState()
@@ -857,7 +869,7 @@ if __name__ == "__main__":
     print(early_stopping_callback.state())
     # initialize metric callback
     metrics_callback.on_train_end()
-    logger.info(f"Trainer State: {state.to_dict()}")
+    # logger.info(f"Trainer State: {state.to_dict()}")
 
     # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
     # print(key_len)

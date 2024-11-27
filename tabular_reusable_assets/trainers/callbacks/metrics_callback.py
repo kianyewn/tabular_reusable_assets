@@ -136,8 +136,8 @@ class MetricsCallback(TrainerCallback):
         metrics_dict = self.metrics.to_dict()
         for name, value in logs.items():
             if name in metrics_dict:
-                n = value.pop("n", 1) if isinstance(value, dict) else 1
-                val = value.pop("value", None) if isinstance(value, dict) else value
+                n = value.get("n", 1) if isinstance(value, dict) else 1
+                val = value.get("value", None) if isinstance(value, dict) else value
                 self.metrics.update(name, value=val, n=n)
 
                 batch_metrics_row[name] = (

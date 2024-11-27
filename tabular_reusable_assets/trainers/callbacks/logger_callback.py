@@ -5,7 +5,7 @@ from typing import List, Optional, Set, Union
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
 from ...metrics.average_meter import AverageMeter
-from .base_callback import TrainerCallback
+from .trainer_callback import TrainerCallback
 
 
 @dataclass

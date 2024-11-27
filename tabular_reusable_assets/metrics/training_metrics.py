@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Set, Union
 
 from tabular_reusable_assets.utils.logger import default_logger as logger
+
 from .average_meter import AverageMeter
+
 
 @dataclass
 class TrainingMetrics:
@@ -23,10 +25,10 @@ class TrainingMetrics:
     lrs: Optional[AverageMeter] = None
 
     _custom_metrics: dict = field(default_factory=list)
-    
+
     def register_metric(self, name: str, store_avg_history: bool = False):
         """Register a new custom metric.
-        
+
         Args:
             name: Name of the metric to register
             store_avg_history: Whether to store average history for this metric
@@ -34,10 +36,9 @@ class TrainingMetrics:
 
         if hasattr(self, name):
             logger.warning(f"Metric: `{name}` already exists as a default metric")
-            
+
         self._custom_metrics[name] = AverageMeter(
-            store_history= self.store_history,
-            store_avg_history = store_avg_history
+            store_history=self.store_history, store_avg_history=store_avg_history
         )
         if name not in self.enlabled_metrics:
             self.enabled_metrics.append(name)
@@ -47,8 +48,7 @@ class TrainingMetrics:
         if name in self._custom_metrics:
             return self._custom_metrics[name]
         raise AttributeError(f"`TrainingMetrics` has no attribute `{name}`")
-        
-            
+
     def __post_init__(self):
         """Initialize only the enabled metrics"""
         if len(self.enabled_metrics) > 0:
@@ -79,8 +79,10 @@ class TrainingMetrics:
             yield metric
 
     def to_dict(self):
-
-        result = {metric_name: getattr(self, metric_name) for metric_name in self.enabled_metrics}
+        result = {
+            metric_name: getattr(self, metric_name)
+            for metric_name in self.enabled_metrics
+        }
         result.update(self._custom_metrics)
         return result
 

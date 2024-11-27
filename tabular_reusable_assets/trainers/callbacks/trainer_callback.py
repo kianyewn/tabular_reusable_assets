@@ -230,18 +230,25 @@ class TrainerState:
         self.global_step += 1
 
     def save_to_json(self, json_path: Path):
-        """Save sate to JSON"""
-        state_dict = {
-            "epoch": self.epoch,
-            "global_step": self.global_step,
-            "best_loss": self.best_loss,
-            "best_score": self.best_score,
-            "best_model_path": self.best_model_path,
-            "no_improvement_count": self.no_improvement_count,
-            "extra_state": self.extra_state,
-        }
+        """Save state to JSON"""
+        # Debug prints
+        print("Before asdict conversion:")
+        print(f"Log history first entry: {self.log_history[0] if self.log_history else 'empty'}")
+        
+        state_dict = dataclasses.asdict(self)
+        
+        # Debug prints
+        print("\nAfter asdict conversion:")
+        print(f"State dict log history first entry: {state_dict['log_history'][0] if state_dict['log_history'] else 'empty'}")
+        
         with open(json_path, "w") as f:
-            json.dump(state_dict, f, indent=2)
+            json.dump(state_dict, f, indent=2, sort_keys=True)
+        
+        # Verify what was actually written
+        print("\nAfter saving, file contents:")
+        with open(json_path, "r") as f:
+            saved_content = json.load(f)
+            print(f"Saved log history first entry: {saved_content['log_history'][0] if saved_content['log_history'] else 'empty'}")
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -250,7 +257,7 @@ class TrainerState:
     def load_from_json(cls, json_path: Path) -> "TrainerState":
         """Load state from json"""
         with open(json_path, "r") as f:
-            state_dict = json.load(f)
+            state_dict = json.loads(f)
         return cls(**state_dict)
 
 

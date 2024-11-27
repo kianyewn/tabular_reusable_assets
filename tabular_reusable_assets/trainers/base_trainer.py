@@ -357,7 +357,6 @@ def train(
         control = callback_handler.on_step_end(args, state, control)
         metrics_callback.on_step_end(batch=step, logs=batch_metrics)
 
-
         if control.should_save:
             logger.info("Saving model")
 
@@ -366,9 +365,10 @@ def train(
 
         if control.should_log:
             logger.info("Logging model")
-
+            state.log_history.append(batch_metrics)
+            
     metrics_callback.on_train_end()
-    state.log_history.append(batch_metrics)
+    
     return {
         "losses": 1,
         "lrs": 1,

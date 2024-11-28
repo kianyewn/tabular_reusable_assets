@@ -177,14 +177,14 @@ class MetricsCallback(TrainerCallback):
                     metrics_dict["sent_count"].avg / metrics_dict["batch_time"].avg
                 )
                 log_msg += f"samples/sec:{samples_per_sec:.3f} "
-            if metrics_dict.get("losses"):
-                log_msg += f"loss:{metrics_dict['losses'].val:.3f}({metrics_dict['losses'].avg:.3f}) "
+            if metrics_dict.get("loss"):
+                log_msg += f"loss:{metrics_dict['loss'].val:.3f}({metrics_dict['loss'].avg:.3f}) "
             if metrics_dict.get("scores"):
                 log_msg += f"score:{metrics_dict['scores'].val:.3f}({metrics_dict['scores'].avg:.3f}) "
-            if metrics_dict.get("grad_values"):
-                log_msg += f"grad:{metrics_dict['grad_values'].val:.3f} "
-            if metrics_dict.get("lrs"):
-                log_msg += f"lr:{metrics_dict['lrs'].val:.5f} "
+            if metrics_dict.get("grad_norm"):
+                log_msg += f"grad:{metrics_dict['grad_norm'].val:.3f} "
+            if metrics_dict.get("learning_rate"):
+                log_msg += f"lr:{metrics_dict['learning_rate'].val:.5f} "
 
             logger.info(log_msg)
 
@@ -194,7 +194,7 @@ class MetricsCallback(TrainerCallback):
             self._flush_metrics_buffer()
 
         # self.state.global_step += 1
-        self.state.best_metric = max(self.state.best_metric, metrics_dict["losses"].avg)
+        self.state.best_metric = max(self.state.best_metric, metrics_dict["loss"].avg)
         return
 
     def _flush_metrics_buffer(self) -> None:

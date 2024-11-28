@@ -340,9 +340,9 @@ def train(
                 "value": n_batch_sample,
                 "n": 1,
             },  # track number of samples sent
-            "losses": loss.item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
+            "loss": loss.item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
             "scores": {"value": score, "n": n_batch_sample},  # track score
-            "grad_values": grad_norm.item(),  # track gradients
+            "grad_norm": grad_norm.item(),  # track gradients
             "learning_rate": optimizer.param_groups[0]["lr"],  # track learning rate
         }
 
@@ -685,13 +685,13 @@ if __name__ == "__main__":
         logging_strategy="epoch",
         save_strategy="epoch",
         eval_strategy="epoch",
-        metric_for_best_model="losses",
+        metric_for_best_model="loss",
         greater_is_better=True,
         logging_steps=10,
         save_steps=5,
         max_steps=-1,
         output_dir="./data/output_dir",
-        resume_from_checkpoint="./data/output_dir",
+        resume_from_checkpoint=None #"./data/output_dir",
     )
 
     control = TrainerControl()
@@ -727,13 +727,13 @@ if __name__ == "__main__":
 
     metrics_callback = MetricsCallback(
         metrics_to_track=[
-            "losses",
+            "loss",
             "batch_time",
             "data_time",
             "sent_count",
             "scores",
-            "grad_values",
-            "lrs",
+            "grad_norm",
+            "learning_rate",
         ],
         log_dir=CFG.log_dir,
         experiment_name=CFG.experiment_name,
@@ -776,7 +776,7 @@ if __name__ == "__main__":
 
         # store training epoch logs
         metrics_callback.on_epoch_end(
-            current_epoch_loss=metrics_callback.metrics.losses.avg,
+            current_epoch_loss=metrics_callback.metrics.loss.avg,
             current_epoch_score=metrics_callback.metrics.scores.val,
             model_path=None,
         )

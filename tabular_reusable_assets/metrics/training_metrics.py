@@ -14,15 +14,15 @@ class TrainingMetrics:
     store_history: bool = False
     enabled_metrics: Union[List[str], Set[str]] = field(default_factory=list)
 
-    losses: AverageMeter = field(
+    loss: AverageMeter = field(
         default_factory=lambda: AverageMeter(store_history=True, store_avg_history=True)
     )
     batch_time: Optional[AverageMeter] = None
     data_time: Optional[AverageMeter] = None
     sent_count: Optional[AverageMeter] = None
     scores: Optional[AverageMeter] = None
-    grad_values: Optional[AverageMeter] = None
-    lrs: Optional[AverageMeter] = None
+    grad_norm: Optional[AverageMeter] = None
+    learning_rate: Optional[AverageMeter] = None
 
     _custom_metrics: dict = field(default_factory=list)
 

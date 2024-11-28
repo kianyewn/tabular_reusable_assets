@@ -277,7 +277,8 @@ class DefaultFlowCallback(TrainerCallback):
             control.should_save = True
 
         # End training
-        if state.global_step >= args.max_steps and state.max_steps!=-1:
+        if state.global_step >= args.max_steps and args.max_steps > 0:
+            logger.info(f'Training stopped by max_steps. {state.global_step} / {args.max_steps}')
             control.should_training_stop = True
             # Save the model at the end if we have a save strategy
             if args.save_strategy not in [SaveStrategy.NO, SaveStrategy.BEST]:

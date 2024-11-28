@@ -81,6 +81,13 @@ class TrainingArguments:
         },
     )
 
+    resume_from_checkpoint: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The path to a folder with a valid checkpoint for your model."
+        },
+    )
+
     def __post_init__(self):
         self.eval_strategy = IntervalStrategy(self.eval_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)

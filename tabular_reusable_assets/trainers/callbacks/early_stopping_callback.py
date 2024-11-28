@@ -5,10 +5,10 @@ import numpy as np
 from tabular_reusable_assets.trainers.trainer_utils import IntervalStrategy
 from tabular_reusable_assets.utils.logger import default_logger as logger
 
-from .trainer_callback import TrainerCallback
+from .trainer_callback import TrainerCallback, ExportableState
 
 
-class EarlyStoppingCallback(TrainerCallback):
+class EarlyStoppingCallback(TrainerCallback, ExportableState):
     def __init__(
         self,
         early_stopping_patience: int = 3,

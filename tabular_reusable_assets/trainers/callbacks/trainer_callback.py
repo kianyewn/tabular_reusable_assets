@@ -96,40 +96,6 @@ class ExportableState:
 
 
 @dataclass
-class TrainerControl:
-    should_training_stop: bool = False
-    should_epoch_stop: bool = False
-    should_log: bool = False
-    should_evaluate: bool = False
-    should_save: bool = False
-
-    def _new_training(self):
-        """Internal method that resets the variable for new training"""
-        self.should_training_stop = False
-
-    def _new_epoch(self):
-        """Internal method that resets the variable for a new epoch"""
-        self.should_epoch_stop = False
-
-    def _new_step(self):
-        self.should_save = False
-        self.should_evaluate = False
-        self.should_log = False
-
-    def state(self):
-        return {
-            "args": {
-                "should_training_stop": self.should_training_stop,
-                "should_epoch_stop": self.should_epoch_stop,
-                "should_log": self.should_log,
-                "should_evaluate": self.should_evaluate,
-                "should_save": self.should_save,
-            },
-            "attributes": {},
-        }
-
-
-@dataclass
 class TrainerState:
     """
     State of the trainer
@@ -158,24 +124,22 @@ class TrainerState:
     log_history: List[Dict[str, float]] = field(default_factory=list)
     extra_state: Dict[str, any] = field(default_factory=dict)
 
-    stateful_callbacks: List[ExportableState] = field(
-        default_factory=list,
-        metadata={
-            "help": "stateful_callbacks (`List[StatefulTrainerCallback]`, *optional*): "
-            "Callbacks attached to the `Trainer` that should have their states be saved or restored. "
-            "Relevent callbacks should implement a `state` and `from_state` function."
-        },
-    )
+    stateful_callbacks: List[ExportableState] = None
 
     def __post_init__(self):
-        if isinstance(self.stateful_callbacks, dict):
+        if self.stateful_callbacks is None:
+            self.stateful_callbacks = {}
+
+        # important for this to be before stateful_callbacks is None. `pass` will proceed to the else statement lol
+        elif isinstance(self.stateful_callbacks, dict):
             pass
-        else:
+
+        else:  # if it is a list
             stateful_callbacks = {}
             for callback in self.stateful_callbacks:
                 if not isinstance(callback, ExportableState):
                     raise TypeError(
-                        "Callbacks should inherit from `ExportableState`, but got type: `{type(callback)`}"
+                        f"Callbacks should inherit from `ExportableState`, but got type: `{type(callback)}`"
                     )
                 name = callback.__class__.__name__
                 if name in self.stateful_callbacks:
@@ -245,7 +209,44 @@ class TrainerState:
         """Load state from json"""
         with open(json_path, "r") as f:
             state_dict = json.load(f)
+
+        logger.info(state_dict)
+        logger.info(type(state_dict["stateful_callbacks"]))  # confirmed to be ditiomary
         return cls(**state_dict)
+
+
+@dataclass
+class TrainerControl(ExportableState):
+    should_training_stop: bool = False
+    should_epoch_stop: bool = False
+    should_log: bool = False
+    should_evaluate: bool = False
+    should_save: bool = False
+
+    def _new_training(self):
+        """Internal method that resets the variable for new training"""
+        self.should_training_stop = False
+
+    def _new_epoch(self):
+        """Internal method that resets the variable for a new epoch"""
+        self.should_epoch_stop = False
+
+    def _new_step(self):
+        self.should_save = False
+        self.should_evaluate = False
+        self.should_log = False
+
+    def state(self):
+        return {
+            "args": {
+                "should_training_stop": self.should_training_stop,
+                "should_epoch_stop": self.should_epoch_stop,
+                "should_log": self.should_log,
+                "should_evaluate": self.should_evaluate,
+                "should_save": self.should_save,
+            },
+            "attributes": {},
+        }
 
 
 class DefaultFlowCallback(TrainerCallback):

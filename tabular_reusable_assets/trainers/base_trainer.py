@@ -29,6 +29,7 @@ from .callbacks.metrics_callback import MetricsCallback
 from .callbacks.trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    ExportableState,
     ProgressCallback,
     TrainerCallback,
     TrainerControl,
@@ -346,9 +347,7 @@ def train(
         }
 
         # print(batch_metrics, type(batch_metrics['sent_count']['value']), type(batch_metrics['losses']['value']), type(batch_metrics['scores']['value']))
-        
-      
-        
+
         end = time.time()
 
         state.global_step += 1
@@ -366,9 +365,9 @@ def train(
         if control.should_log:
             logger.info("Logging model")
             state.log_history.append(batch_metrics)
-            
+
     metrics_callback.on_train_end()
-    
+
     return {
         "losses": 1,
         "lrs": 1,
@@ -636,11 +635,26 @@ def _save(
     args: TrainingArguments,
     state: TrainerState,
     control: TrainerControl,
+    callback_handler,
 ):
     if not Path(args.output_dir).exists():
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    state.stateful_callbacks["TrainerControl"] = control.state()
+    callbacks_dict = {}
+    callbacks_to_save = [
+        cb
+        for cb in callback_handler.callbacks + [control]
+        if isinstance(cb, ExportableState)
+    ]
+    for callback in callbacks_to_save:
+        name = callback.__class__.__name__
+        if name not in callbacks_dict:
+            callbacks_dict[name] = [callback.state()]
+        else:
+            callbacks_dict[name].append(callback.state())
+    state.stateful_callbacks = callbacks_dict
+
+    # state.stateful_callbacks["TrainerControl"] = control.state()
     # state.stateful_callbacks['TrainingArguments'] # this is something that users will change, so dont save this.
 
     if state:
@@ -663,17 +677,88 @@ def _save(
 
     # Good practice: save your training arguments together with the trained model
     torch.save(args, Path(args.output_dir) / TRAINING_ARGS_NAME)
-    return
 
 
-# def _load(model, optimizer, lr_scheduler, config, args, state, control):
-#     model_path = Path(args.output_dir) / WEIGHTS_NAME
-#     optimizer_path = Path(args.output_dir) / OPTIMIZER_NAME
-#     lr_scheduler_path = Path(args.output_dir) / SCHEDULER_NAME
-#     args_path = Path(args.output_dir) / TRAINING_ARGS_NAME
-#     trainer_state_path = Path(args.output_dir) / TRAINER_STATE_NAME
+def load_callback_states(
+    callback_handler: CallbackHandler, trainer_state_path: str, control: TrainerControl
+):
+    """Load the calllback state inside callback_handler.
+    If the callback_handler does not have the callbacks saved in the state, we just continue to the next one
+    """
+    new_callbacks = []
+    state = TrainerState.load_from_json(
+        trainer_state_path
+    )  # Load the state directly form json file
+    original_callbacks = callback_handler.callbacks + [control]
 
-#     model.set_state
+    not_found = []
+    control = None
+    for stored_callback, data in state.stateful_callbacks.items():
+        if any(
+            callback.__class__.__name__ == stored_callback
+            for callback in original_callbacks
+        ):
+            if not isinstance(data, list):
+                data = [data]
+
+            duplicated_stored_callbacks = [
+                callback
+                for callback in original_callbacks
+                if callback.__class__.__name__ == stored_callback
+            ]
+            for callback, callback_state in zip(duplicated_stored_callbacks, data):
+                new_callback = callback.__class__(**callback_state.get("args", {}))
+                for attribute, value in callback_state.get("attributes", {}).items():
+                    setattr(new_callback, attribute, value)
+                if isinstance(new_callback, TrainerControl):
+                    control = new_callback
+                else:
+                    new_callbacks.append(new_callback)
+                # We remove the existing callback and add it to the list of new callbacks
+                callback_handler.remove_callback(type(new_callback))
+
+            logger.info(
+                "Continuing training from checkpoint, restoring any callbacks that were passed in"
+            )
+        else:
+            not_found.append(stored_callback)
+
+    if len(not_found) > 0:
+        logger.warning(
+            f"Checkpoint included callbacks not included in current configuration. Ignoring. ({', '.join(not_found)})"
+        )
+    for new_callback in new_callbacks:
+        callback_handler.add_callback(new_callback)
+
+    # return state, control
+
+
+def _load(model, optimizer, lr_scheduler, config, args, state, control):
+    logger.info(f"Resuming from checkpoint: {args.resume_from_checkpoint}")
+
+    model_path = Path(args.output_dir) / WEIGHTS_NAME
+    optimizer_path = Path(args.output_dir) / OPTIMIZER_NAME
+    lr_scheduler_path = Path(args.output_dir) / SCHEDULER_NAME
+    # args_path = Path(args.output_dir) / TRAINING_ARGS_NAME
+    trainer_state_path = Path(args.output_dir) / TRAINER_STATE_NAME
+
+    if model:
+        # load model state_dict
+        model.load_state_dict(torch.load(model_path, weights_only=True))
+    # load optimizer
+    if optimizer:
+        optimizer.load_state_dict(torch.load(optimizer_path, weights_only=True))
+
+    # load scheduler
+    if lr_scheduler:
+        lr_scheduler.load_state_dict(torch.load(lr_scheduler_path, weights_only=True))
+
+    # load trainer_state
+    if state:
+        # logger.info(TrainerState.load_from_json(trainer_state_path))
+        # state.load_from_json(trainer_state_path)
+        load_callback_states(callback_handler, trainer_state_path, control)
+    return state, control
 
 
 def _maybe_log_save_evaluate(
@@ -735,9 +820,6 @@ if __name__ == "__main__":
         CFG.within_epoch_logs_path, run_description=CFG.run_description
     )
 
-    # train_logger.reset()
-    # reset_log_step()
-
     early_stopping = EarlyStopping(patience=3, min_delta=0.001)
 
     args = TrainingArguments(
@@ -749,10 +831,14 @@ if __name__ == "__main__":
         logging_steps=10,
         save_steps=5,
         output_dir="./data/output_dir",
+        resume_from_checkpoint="./data/output_dir",
     )
+
+    control = TrainerControl()
+
+    logger.info(TrainerState)
     state = TrainerState()
     state.max_steps = len(train_dataloader) * CFG.n_epoch
-    control = TrainerControl()
 
     early_stopping_callback = EarlyStoppingCallback()
     callbacks = [DefaultFlowCallback(), ProgressCallback(), early_stopping_callback]
@@ -760,10 +846,22 @@ if __name__ == "__main__":
     callback_handler = CallbackHandler(
         callbacks, model, processing_class=None, optimizer=optimizer, lr_scheduler=None
     )
+
+    state.stateful_callbacks = [
+        cb
+        for cb in callback_handler.callbacks + [control]
+        if isinstance(control, ExportableState)
+    ]
+
     # callback_handler.add_callback()
     callback_handler.pop_callback(ProgressCallback)
 
     control = callback_handler.on_train_begin(args, state, control)
+
+    if args.resume_from_checkpoint:
+        lr_scheduler = None
+        _load(model, optimizer, lr_scheduler, CFG, args, state, control)
+        print(control.state())
 
     metrics_callback = MetricsCallback(
         metrics_to_track=[
@@ -860,6 +958,7 @@ if __name__ == "__main__":
                 args=args,
                 state=state,
                 control=control,
+                callback_handler=callback_handler,
             )
 
         # time.sleep(2)

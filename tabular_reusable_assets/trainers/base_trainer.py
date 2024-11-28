@@ -730,7 +730,7 @@ def load_callback_states(
     for new_callback in new_callbacks:
         callback_handler.add_callback(new_callback)
 
-    # return state, control
+    return state, control
 
 
 def _load(model, optimizer, lr_scheduler, config, args, state, control):
@@ -757,7 +757,7 @@ def _load(model, optimizer, lr_scheduler, config, args, state, control):
     if state:
         # logger.info(TrainerState.load_from_json(trainer_state_path))
         # state.load_from_json(trainer_state_path)
-        load_callback_states(callback_handler, trainer_state_path, control)
+        state, control = load_callback_states(callback_handler, trainer_state_path, control)
     return state, control
 
 
@@ -830,6 +830,7 @@ if __name__ == "__main__":
         greater_is_better=False,
         logging_steps=10,
         save_steps=5,
+        max_steps=20,
         output_dir="./data/output_dir",
         resume_from_checkpoint="./data/output_dir",
     )
@@ -860,8 +861,9 @@ if __name__ == "__main__":
 
     if args.resume_from_checkpoint:
         lr_scheduler = None
-        _load(model, optimizer, lr_scheduler, CFG, args, state, control)
+        state, control = _load(model, optimizer, lr_scheduler, CFG, args, state, control)
         print(control.state())
+        print(state)
 
     metrics_callback = MetricsCallback(
         metrics_to_track=[

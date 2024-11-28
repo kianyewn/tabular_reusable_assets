@@ -88,6 +88,10 @@ class TrainingArguments:
         },
     )
 
+    max_steps: int = field(
+    default=-1,
+    metadata={"help": "If > 0: set total number of training steps to perform. Override num_train_epochs."})
+
     def __post_init__(self):
         self.eval_strategy = IntervalStrategy(self.eval_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)

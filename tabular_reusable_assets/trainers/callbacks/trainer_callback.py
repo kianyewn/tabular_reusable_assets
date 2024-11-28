@@ -276,6 +276,15 @@ class DefaultFlowCallback(TrainerCallback):
         ):
             control.should_save = True
 
+        # End training
+        if state.global_step >= args.max_steps and state.max_steps!=-1:
+            control.should_training_stop = True
+            # Save the model at the end if we have a save strategy
+            if args.save_strategy not in [SaveStrategy.NO, SaveStrategy.BEST]:
+                control.should_save = True
+
+        return control
+        
     def on_epoch_end(
         self,
         args: TrainingArguments,
@@ -291,6 +300,7 @@ class DefaultFlowCallback(TrainerCallback):
 
         if args.save_strategy == SaveStrategy.EPOCH:
             control.should_save = True
+        return control
 
 
 class ProgressCallback(TrainerCallback):

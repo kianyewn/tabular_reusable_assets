@@ -278,6 +278,17 @@ def calculate_metric_score(y_pred, y_true):
     return calculate_auc(y_pred=y_pred, y_true=y_true).item()
 
 
+def evaluate(model, val_dataloader):
+    for step, (bx, by) in enumerate(val_dataloader):
+        bx, by = bx.to(CFG.device), by.to(CFG.device)
+        out, loss = model(bx, by)
+        score = calculate_metric_score(
+            y_pred=out.view(-1).detach().numpy(), y_true=by.detach().numpy()
+        )
+        return score
+    return
+
+
 def train(
     train_dataloader,
     model,
@@ -300,13 +311,24 @@ def train(
         # Measure data loading time
         data_time = time.time() - end
 
+        state.global_step += 1
+        n_batch_sample = bx.shape[0]
+
+        # Before , reset control
+        control = callback_handler.on_step_begin(args, state, control)
+
         # Send to device
         bx, by = bx.to(CFG.device), by.to(CFG.device)
 
         # Model out
         out, loss = model(bx, by)
 
-        callback_handler.on_step_begin(args, state, control)
+        # Grad checks
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            model.parameters(), CFG.max_grad_norm
+        )
+
+        # Before optimizer step, if you want to clip the gradient with a callback, determine if you should step here
         control = callback_handler.on_pre_optimizer_step(args, state, control)
 
         # without gradient accumulation
@@ -317,11 +339,6 @@ def train(
 
         control = callback_handler.on_optimizer_step(args, state, control)
 
-        # Grad checks
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            model.parameters(), CFG.max_grad_norm
-        )
-
         # keep track of current scores
         with torch.no_grad():
             model.eval()
@@ -330,7 +347,6 @@ def train(
             )
             model.train()
 
-        n_batch_sample = out.shape[0]
         batch_metrics = {
             "epoch": epoch,  # current epoch
             "total_steps": steps_in_epoch,  # total number of steps
@@ -340,15 +356,11 @@ def train(
                 "value": n_batch_sample,
                 "n": 1,
             },  # track number of samples sent
-            "loss": loss.item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
+            "loss": loss.detach().item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
             "scores": {"value": score, "n": n_batch_sample},  # track score
             "grad_norm": grad_norm.item(),  # track gradients
             "learning_rate": optimizer.param_groups[0]["lr"],  # track learning rate
         }
-
-        # print(batch_metrics, type(batch_metrics['sent_count']['value']), type(batch_metrics['losses']['value']), type(batch_metrics['scores']['value']))
-
-        end = time.time()
 
         state.global_step += 1
         state.epoch = epoch + (step + 1) / steps_in_epoch
@@ -365,6 +377,8 @@ def train(
         if control.should_log:
             logger.info("Logging model")
             state.log_history.append(batch_metrics)
+
+        end = time.time()
 
     metrics_callback.on_train_end()
 
@@ -482,6 +496,7 @@ def validate(model, val_dataloader, store_history=True):
         "final_score": final_score,
     }
 
+
 @dataclass
 class ModelConfig:
     hidden_layers = [1, 2, 3]
@@ -511,7 +526,8 @@ def _save(
         callbacks_dict = {}
         callbacks_to_save = [
             cb
-            for cb in callback_handler.callbacks + [control] # Remember to add control to save as state
+            for cb in callback_handler.callbacks
+            + [control]  # Remember to add control to save as state
             if isinstance(cb, ExportableState)
         ]
         for callback in callbacks_to_save:
@@ -691,12 +707,12 @@ if __name__ == "__main__":
         save_steps=5,
         max_steps=-1,
         output_dir="./data/output_dir",
-        resume_from_checkpoint=None #"./data/output_dir",
+        resume_from_checkpoint=None,  # "./data/output_dir",
     )
 
     control = TrainerControl()
     state = TrainerState()
-    
+
     if args.max_steps < 0:
         state.max_steps = len(train_dataloader) * CFG.n_epoch
 
@@ -722,8 +738,8 @@ if __name__ == "__main__":
         state, control = _load(
             model, optimizer, lr_scheduler, CFG, args, state, control
         )
-        print(control.state())
-        print(state)
+        # print(control.state())
+        # print(state)
 
     metrics_callback = MetricsCallback(
         metrics_to_track=[
@@ -780,7 +796,6 @@ if __name__ == "__main__":
             current_epoch_score=metrics_callback.metrics.scores.val,
             model_path=None,
         )
-
 
         if control.should_training_stop:
             break

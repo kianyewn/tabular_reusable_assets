@@ -84,6 +84,7 @@ class EarlyStoppingCallback(TrainerCallback, ExportableState):
         
         if self.early_stopping_patience_counter >= self.early_stopping_patience:
             control.should_training_stop = True
+            logger.info(f'Training stopped by early stopping. {self.early_stopping_patience_counter} / {self.early_stopping_patience}')
 
     def state(self) -> dict:
         return {

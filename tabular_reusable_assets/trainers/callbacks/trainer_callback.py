@@ -250,6 +250,9 @@ class TrainerControl(ExportableState):
 
 
 class DefaultFlowCallback(TrainerCallback):
+    """DefualtFlowCallback should only happen at step_end and epoch_end. You will not code step_start.
+    Essentially you check if you want to log, evaluate, save, only at the end of the step and epoch.
+    """
     def on_step_end(
         self,
         args: TrainingArguments,

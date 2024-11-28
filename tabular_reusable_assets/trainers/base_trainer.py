@@ -343,7 +343,7 @@ def train(
             "losses": loss.item(),  # {"value": loss.item(), "n": n_batch_sample},  # track loss
             "scores": {"value": score, "n": n_batch_sample},  # track score
             "grad_values": grad_norm.item(),  # track gradients
-            "lrs": optimizer.param_groups[0]["lr"],  # track learning rate
+            "learning_rate": optimizer.param_groups[0]["lr"],  # track learning rate
         }
 
         # print(batch_metrics, type(batch_metrics['sent_count']['value']), type(batch_metrics['losses']['value']), type(batch_metrics['scores']['value']))
@@ -370,7 +370,7 @@ def train(
 
     return {
         "losses": 1,
-        "lrs": 1,
+        "learning_rate": 1,
         "global_step": 1,
         "batch_time": 1,
         "data_time": 1,
@@ -482,139 +482,6 @@ def validate(model, val_dataloader, store_history=True):
         "final_score": final_score,
     }
 
-
-class TrainingLogger:
-    def __init__(self, file_path, run_description):
-        self.file_path = file_path
-        self.run_description = run_description
-        self.within_epoch_logs_dict = defaultdict(list)
-        self.across_epochs_logs_dict = defaultdict(list)
-
-    def del_file(self, path):
-        if os.path.exists(path):
-            os.remove(path)
-
-    def reset(self):
-        self.del_file(self.file_path)
-        logger.info(f"Removed log file from : {self.file_path}")
-
-    def update_epoch_logs(
-        self, epoch_num, cur_lr, train_loss, train_score, valid_loss, valid_score
-    ):
-        self.across_epochs_logs_dict["epoch"].append(epoch_num)
-        self.across_epochs_logs_dict["cur_lr"].append(cur_lr)
-        self.across_epochs_logs_dict["train_loss"].append(train_loss)
-        self.across_epochs_logs_dict["train_score"].append(train_score)
-        self.across_epochs_logs_dict["valid_loss"].append(valid_loss)
-        self.across_epochs_logs_dict["valid_score"].append(valid_score)
-
-    def update_within_epoch_logs(
-        self,
-        epoch_num,
-        losses,
-        lrs,
-        global_step,
-        batch_time,
-        data_time,
-        sent_count,
-        scores,
-        eoe_val_loss,
-        eoe_val_score,
-    ):
-        self.within_epoch_logs_dict["epoch"].extend(
-            [epoch_num] * len(sent_count.history)
-        )
-
-        self.within_epoch_logs_dict["global_step"].extend(
-            [global_step] * len(sent_count.history)
-        )
-        self.within_epoch_logs_dict["batch_time"].extend(batch_time.history)
-        self.within_epoch_logs_dict["data_time"].extend(data_time.history)
-        self.within_epoch_logs_dict["sent_count"].extend(sent_count.history)
-
-        # training scores and loss
-        self.within_epoch_logs_dict["lr"].extend(lrs.history)
-        self.within_epoch_logs_dict["score"].extend(scores.history)
-        self.within_epoch_logs_dict["loss_avg"].extend(losses.avg_history)
-        self.within_epoch_logs_dict["loss"].extend(losses.history)
-
-        self.within_epoch_logs_dict["eoe_val_score"].extend(
-            [eoe_val_score] * len(sent_count.history)
-        )
-        self.within_epoch_logs_dict["eoe_val_loss"].extend(
-            [eoe_val_loss] * len(sent_count.history)
-        )
-
-    def save(self):
-        within_epoch_logs_df = pd.DataFrame.from_dict(self.within_epoch_logs_dict)
-
-        # Add description to run
-        within_epoch_logs_df["run_description"] = self.run_description
-        within_epoch_logs_df["updated_date"] = datetime.now()
-
-        if not os.path.exists(self.file_path):
-            logger.info(
-                f"path: {self.file_path} does not exist, creating new log csv of shape {within_epoch_logs_df.shape}"
-            )
-            within_epoch_logs_df.to_csv(self.file_path, index=False)
-        else:
-            # shortcut to do append: df.to_csv(csv_path, mode='a', header=False, index=False)
-            logger.info(f"Appending logs to existing csv path: {self.file_path}.")
-
-            within_epoch_logs = pd.read_csv(self.file_path)
-            # conflicts in file
-            if self.run_description in within_epoch_logs["run_description"].unique():
-                within_epoch_logs_df["run_description"] = self.run_description + "*"
-
-            within_epoch_logs_df = pd.concat(
-                [within_epoch_logs, within_epoch_logs_df], ignore_index=True
-            )
-            within_epoch_logs_df.to_csv(self.file_path, index=False)
-            logger.info(
-                f"Log file increased from shape: {within_epoch_logs.shape} to shape: {within_epoch_logs_df.shape}."
-            )
-        return within_epoch_logs_df
-
-    def get_across_epoch_logs(self, file_path):
-        within_epoch_logs = pd.read_csv(file_path)
-
-        # select for each epoch the last index (last step)
-        epoch_logs = within_epoch_logs.iloc[
-            within_epoch_logs.reset_index().groupby("epoch")["index"].max().tolist(), :
-        ]
-        return epoch_logs
-
-    def save_across_epochs_log(self, file_path, overwrite=True):
-        self.del_file(file_path)
-        across_epoch_logs_df = pd.DataFrame.from_dict(self.across_epochs_logs_dict)
-        across_epoch_logs_df
-
-        return across_epoch_logs_df
-
-
-class EarlyStopping:
-    """Early stopping handler"""
-
-    def __init__(self, patience: int = 5, min_delta: float = 0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.should_stop = False
-
-    def __call__(self, val_loss: float) -> bool:
-        if self.best_loss is None:
-            self.best_loss = val_loss
-        elif val_loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.should_stop = True
-        else:
-            self.best_loss = val_loss
-            self.counter = 0
-        return self.should_stop
-
-
 @dataclass
 class ModelConfig:
     hidden_layers = [1, 2, 3]
@@ -640,24 +507,20 @@ def _save(
     if not Path(args.output_dir).exists():
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    callbacks_dict = {}
-    callbacks_to_save = [
-        cb
-        for cb in callback_handler.callbacks + [control]
-        if isinstance(cb, ExportableState)
-    ]
-    for callback in callbacks_to_save:
-        name = callback.__class__.__name__
-        if name not in callbacks_dict:
-            callbacks_dict[name] = [callback.state()]
-        else:
-            callbacks_dict[name].append(callback.state())
-    state.stateful_callbacks = callbacks_dict
-
-    # state.stateful_callbacks["TrainerControl"] = control.state()
-    # state.stateful_callbacks['TrainingArguments'] # this is something that users will change, so dont save this.
-
     if state:
+        callbacks_dict = {}
+        callbacks_to_save = [
+            cb
+            for cb in callback_handler.callbacks + [control] # Remember to add control to save as state
+            if isinstance(cb, ExportableState)
+        ]
+        for callback in callbacks_to_save:
+            name = callback.__class__.__name__
+            if name not in callbacks_dict:
+                callbacks_dict[name] = [callback.state()]
+            else:
+                callbacks_dict[name].append(callback.state())
+        state.stateful_callbacks = callbacks_dict
         state.save_to_json(Path(args.output_dir) / TRAINER_STATE_NAME)
 
     if config:
@@ -757,7 +620,9 @@ def _load(model, optimizer, lr_scheduler, config, args, state, control):
     if state:
         # logger.info(TrainerState.load_from_json(trainer_state_path))
         # state.load_from_json(trainer_state_path)
-        state, control = load_callback_states(callback_handler, trainer_state_path, control)
+        state, control = load_callback_states(
+            callback_handler, trainer_state_path, control
+        )
     return state, control
 
 
@@ -816,33 +681,26 @@ if __name__ == "__main__":
 
     optimizer = AdamW(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
 
-    train_logger = TrainingLogger(
-        CFG.within_epoch_logs_path, run_description=CFG.run_description
-    )
-
-    early_stopping = EarlyStopping(patience=3, min_delta=0.001)
-
     args = TrainingArguments(
         logging_strategy="epoch",
         save_strategy="epoch",
         eval_strategy="epoch",
         metric_for_best_model="losses",
-        greater_is_better=False,
+        greater_is_better=True,
         logging_steps=10,
         save_steps=5,
-        max_steps=20,
+        max_steps=-1,
         output_dir="./data/output_dir",
         resume_from_checkpoint="./data/output_dir",
     )
 
     control = TrainerControl()
-
-    logger.info(TrainerState)
     state = TrainerState()
-    state.max_steps = len(train_dataloader) * CFG.n_epoch
+    
+    if args.max_steps < 0:
+        state.max_steps = len(train_dataloader) * CFG.n_epoch
 
-    early_stopping_callback = EarlyStoppingCallback()
-    callbacks = [DefaultFlowCallback(), ProgressCallback(), early_stopping_callback]
+    callbacks = [DefaultFlowCallback(), ProgressCallback(), EarlyStoppingCallback()]
 
     callback_handler = CallbackHandler(
         callbacks, model, processing_class=None, optimizer=optimizer, lr_scheduler=None
@@ -861,7 +719,9 @@ if __name__ == "__main__":
 
     if args.resume_from_checkpoint:
         lr_scheduler = None
-        state, control = _load(model, optimizer, lr_scheduler, CFG, args, state, control)
+        state, control = _load(
+            model, optimizer, lr_scheduler, CFG, args, state, control
+        )
         print(control.state())
         print(state)
 
@@ -883,8 +743,7 @@ if __name__ == "__main__":
 
     # initialize metric callback
     metrics_callback.on_train_begin()
-
-    early_stopping_callback.on_train_begin(args, state=state, control=control)
+    control = callback_handler.on_train_begin(args, state=state, control=control)
 
     for i in range(CFG.n_epoch):
         # metrics callback
@@ -907,27 +766,12 @@ if __name__ == "__main__":
             control=control,
         )
 
-        # Validate for single epoch
-        # val_logs = validate(model, val_dataloader)
-        # print(f'val loss: {val_logs['scores'].avg}')
-
-        # # store training steps log
-        # train_logger.update_within_epoch_logs(
-        #     epoch_num=i + 1,
-        #     **train_logs,
-        #     eoe_val_loss=val_logs["losses"].avg,
-        #     eoe_val_score=val_logs["final_score"],
-        # )
-
-        # if early_stopping(val_logs["losses"].avg):
-        #     logger.info(f"Early stopping triggered at epoch: {i+1}")
-        #     break
-
-        # Save current model at every epoch
-        # model_path = CFG.log_dir / f"checkpoints/model_epoch_{i}.pt"
-        # torch.save(model.state_dict(), model_path)
-
         state.epoch += 1
+
+        control = callback_handler.on_evaluate(
+            args, state, control, metrics=metrics_callback.metrics
+        )
+
         control = callback_handler.on_epoch_end(args, state, control)
 
         # store training epoch logs
@@ -937,16 +781,6 @@ if __name__ == "__main__":
             model_path=None,
         )
 
-        early_stopping_callback.on_evaluate(
-            args,
-            state=metrics_callback.state,
-            control=control,
-            metrics=metrics_callback.metrics,
-        )
-
-        control = callback_handler.on_evaluate(
-            args, state, control, metrics=metrics_callback.metrics
-        )
 
         if control.should_training_stop:
             break
@@ -967,18 +801,8 @@ if __name__ == "__main__":
         # logger.info("==========")
 
     control = callback_handler.on_train_end(args, state, control)
-    print(early_stopping_callback.state())
     # initialize metric callback
     metrics_callback.on_train_end()
     # logger.info(f"Trainer State: {state.to_dict()}")
 
-    # key_len = list((k, len(l)) for k, l in train_logger.within_epoch_logs_dict.items())
-    # print(key_len)
-
-    # # plot training losses
-    # total_loss_steps = train_logger.within_epoch_logs_dict["loss_avg"]
-    # plt.plot(range(len(total_loss_steps)), total_loss_steps)
-    # plt.show()
-
-    # train_logger.save()
-    # d = train_logger.get_across_epoch_logs(CFG.within_epoch_logs_path)
+    # Plot learning curve

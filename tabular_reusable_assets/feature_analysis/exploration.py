@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 from .colors import plotly_colors
 
-multiclass_perc_format = "label={lab}%"
+multiclass_perc_format = "label={lab}(%)"
 multiclass_std_format = "label={lab}(std)%"
 binary_perc_format = "{target}=1(%)"
 binary_std_format = "{target}(std)%"

@@ -8,8 +8,8 @@ import plotly.graph_objects as go
 
 from .colors import plotly_colors
 
-multiclass_perc_format = "label={lab}(%)"
-multiclass_std_format = "label={lab}(std)%"
+multiclass_perc_format = "{target}={lab}(%)"
+multiclass_std_format = "{target}={lab}(std)%"
 binary_perc_format = "{target}=1(%)"
 binary_std_format = "{target}(std)%"
 
@@ -152,8 +152,8 @@ def multiclass_plotly_plot_numerical_feature(data, feat, target, plot_df, error_
     unique_targets = sorted(data[target].unique())
     colors = cycle(plotly_colors)
     for lab in unique_targets:
-        target_rate_col = multiclass_perc_format.format(lab=lab)
-        target_std_col = multiclass_std_format.format(lab=lab)
+        target_rate_col = multiclass_perc_format.format(target=target, lab=lab)
+        target_std_col = multiclass_std_format.format(target=target, lab=lab)
 
         fig.add_trace(
             go.Scatter(
@@ -405,19 +405,19 @@ def get_numerical_feature_stats_df(
                 feat_data_target_perc = (
                     feat_data.groupby("bin", observed=False)[f"Actual={lab}"]
                     .mean()
-                    .rename(multiclass_perc_format.format(lab=lab))
+                    .rename(multiclass_perc_format.format(target=target, lab=lab))
                 )
                 # feat_data_target_std = (
                 #     feat_data.groupby("bin", observed=False)[f"Actual={lab}"]
                 #     .std()
-                #     .rename(multiclass_std_format.format(lab=lab))
+                #     .rename(multiclass_std_format.format(target=target, lab=lab))
                 #     ** 2
                 # )
                 feat_data_target_std = feat_data_target_perc * (
                     1 - feat_data_target_perc
                 )
                 feat_data_target_std = feat_data_target_std.rename(
-                    multiclass_std_format.format(lab=lab)
+                    multiclass_std_format.format(target=target, lab=lab)
                 )
 
                 stats_dfs.append(feat_data_target_perc)
@@ -474,7 +474,7 @@ def get_categorical_feature_stats_df(
                 feat_data_target_perc = (
                     feat_data.groupby(feat, observed=False)[f"Actual={lab}"]
                     .mean()
-                    .rename(multiclass_perc_format.format(lab=lab))
+                    .rename(multiclass_perc_format.format(target=target, lab=lab))
                 )
                 # feat_data_target_std = (
                 #     feat_data.groupby("bin", observed=False)[f"Actual={lab}"]
@@ -486,7 +486,7 @@ def get_categorical_feature_stats_df(
                     1 - feat_data_target_perc
                 )
                 feat_data_target_std = feat_data_target_std.rename(
-                    multiclass_std_format.format(lab=lab)
+                    multiclass_std_format.format(target=target, lab=lab)
                 )
 
                 stats_dfs.append(feat_data_target_perc)

@@ -224,6 +224,7 @@ if __name__ == "__main__":
 
     target = data_output.target
 
+    train, test = train_test_split(data, test_size=0.2, random_state=42, stratify=data.loc[:, target])
     xgb_model = XGBModel(
         dataset=data,
         feature_columns=feature_columns,
@@ -231,16 +232,18 @@ if __name__ == "__main__":
         group=numerical_features[0],
         random_state=42,
         cv_params={"n_splits": 5, 'predicted_class_threshold':0.5},
+        params={"eval_metric": "auc"},
+        fit_params={"eval_set": [(train.loc[:, feature_columns], train.loc[:, target])], 'verbose':False}
     )
     xgb_model.fit(X=data.loc[:, feature_columns], y=data.loc[:, target])
     y_pred_proba = xgb_model.predict_proba(X=data.loc[:, feature_columns])
     # print(y_pred_proba.shape)
     scored_dataset = xgb_model.train()
     # print(scored_dataset)
-    xgb_model.save('xgb_model.joblib')
+    # xgb_model.save('xgb_model.joblib')
 
-    xgb_model = XGBModel.load('xgb_model.joblib')
-    print(xgb_model.cv_score)
+    # xgb_model = XGBModel.load('xgb_model.joblib')
+    # print(xgb_model.cv_score,  xgb_model.model.__sklearn_is_fitted__())
 
     # xgb_base = XGBClassifier(objective="binary:logistic", eval_metric="auc")
     # XGBModel.plot_learning_curve(xgb_base, metrics_to_plot=["auc", "mlogloss"])

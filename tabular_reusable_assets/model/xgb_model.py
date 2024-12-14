@@ -1,4 +1,5 @@
 from typing import Dict, List
+import joblib
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,6 +65,7 @@ class XGBModel:
 
         self.group = group
 
+        self.model = None
         self.random_state = self.fixed_params.get("random_state", None)
         self.cv_score = None
         self.cross_val_predictions = None
@@ -201,6 +203,17 @@ class XGBModel:
         plt.legend(loc="right")
         plt.show()
 
+        
+    def save(self, path):
+        joblib.dump(self, path)
+
+    @classmethod
+    def load(cls, path):
+        # - Load the model from disk
+        instance = joblib.load(path)
+        return instance 
+
+
 
 if __name__ == "__main__":
     data_output = ExampleDatasets.load_binary_classification_breast_cancer_dataset()
@@ -219,10 +232,15 @@ if __name__ == "__main__":
         random_state=42,
         cv_params={"n_splits": 5, 'predicted_class_threshold':0.5},
     )
-    # xgb_model.fit(X=data.loc[:, feature_columns], y=data.loc[:, target])
-    # y_pred_proba = xgb_model.predict_proba(X=data.loc[:, feature_columns])
+    xgb_model.fit(X=data.loc[:, feature_columns], y=data.loc[:, target])
+    y_pred_proba = xgb_model.predict_proba(X=data.loc[:, feature_columns])
     # print(y_pred_proba.shape)
     scored_dataset = xgb_model.train()
-    print(scored_dataset)
+    # print(scored_dataset)
+    xgb_model.save('xgb_model.joblib')
+
+    xgb_model = XGBModel.load('xgb_model.joblib')
+    print(xgb_model.cv_score)
+
     # xgb_base = XGBClassifier(objective="binary:logistic", eval_metric="auc")
     # XGBModel.plot_learning_curve(xgb_base, metrics_to_plot=["auc", "mlogloss"])

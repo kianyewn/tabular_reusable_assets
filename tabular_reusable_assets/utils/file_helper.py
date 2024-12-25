@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -43,7 +43,7 @@ class FileHelper:
         dir_tree_metadata: Optional[Dict] = defaultdict(lambda: 0),
         max_depth: int = 100,
         max_dir: int = 100,
-    ) -> tuple[List[str], Dict]:
+    ) -> Tuple[List[str], Dict]:
         """
         Helper function to generate directory tree structure.
 
@@ -155,31 +155,49 @@ class PathParser:
     """Utility class for parsing file paths."""
 
     @staticmethod
-    def absolute_path(filepath: str | Path) -> Path:
+    def get_absolute_path(filepath: str | Path) -> Path:
         """Get absolute path."""
-        return filepath.resolve()
+        return Path(filepath).resolve()
 
     @staticmethod
-    def base_name(filepath: str | Path) -> str:
+    def get_base_name(filepath: str | Path) -> str:
         """Get file name without extension."""
-        return filepath.stem
+        return Path(filepath).stem
 
     @staticmethod
-    def extensions(filepath: str | Path) -> List[str]:
+    def get_extensions(filepath: str | Path) -> List[str]:
         """Get all extensions."""
-        return filepath.suffixes
+        return Path(filepath).suffixes
 
     @staticmethod
-    def extension(filepath: str | Path) -> str:
+    def get_extension(filepath: str | Path) -> str:
         """Get primary extension."""
-        return filepath.suffix
+        return Path(filepath).suffix
 
     @property
-    def directory(filepath) -> Path:
+    def get_directory(filepath) -> Path:
         """Get parent directory."""
-        return filepath.parent
+        return Path(filepath).parent
 
     @staticmethod
-    def path_without_extension(filepath: str | Path) -> Path:
+    def get_path_without_extension(filepath: str | Path) -> Path:
         """Get path without extension."""
-        return filepath.with_suffix("")
+        return Path(filepath).with_suffix("")
+
+    @staticmethod
+    def get_file_name(filepath: str | Path) -> str:
+        """Get file name."""
+        return Path(filepath).name
+
+    @staticmethod
+    def iterdir(path: str | Path) -> List[Path]:
+        """Iterate over directory.
+        [PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/metrics'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/feature_analysis'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/config'),
+        """
+        return list(Path(path).resolve().iterdir())
+
+    def iter_dir_with_ignore(self, path: str | Path, ignore: List[str]) -> List[Path]:
+        """Iterate over directory with ignore."""
+        return [p for p in self.iterdir(path) if p.name not in ignore]

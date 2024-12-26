@@ -10,6 +10,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier
 
+from tabular_reusable_assets.model.model_utils import plot_learning_curve
+
 from . import parameter_space_registry
 from .base import BaseModelTuner
 from .utils import preview_parameter_space
@@ -42,6 +44,10 @@ class TuningConfig:
 
     # Custom parameter space configuration
     param_space_fn: Optional[Callable[[optuna.Trial], Dict[str, Any]]] = None
+
+    def __post_init__(self):
+        if base_params.get("random_state", None) is None:
+            base_params["random_state"] = self.random_state
 
 
 class ModelHyperParameterTuner(BaseModelTuner):
@@ -87,6 +93,8 @@ class ModelHyperParameterTuner(BaseModelTuner):
         self._setup_logging()
         # Initialize study
         self.study = self._create_study()
+        self.best_score = float("-inf")
+        self.best_model = None
 
     def _setup_logging(self):
         """Setup logging configuration"""
@@ -266,11 +274,12 @@ class ModelHyperParameterTuner(BaseModelTuner):
 
     def get_learning_curve(self):
         """Retrain the model with the best parameters and return the learning curve"""
-        final_model = self.base_model(**self.best_params)
+        self.logger.info(f"Best params: {self.best_params}")
+        audit_model = self.base_model(**self.best_params)
         fit_params = self.tuning_config.fit_params.copy()
-        fit_params.update({"verbose": True})
-        final_model.fit(self.X_train, self.y_train, **fit_params)
-        return final_model.evals_result()
+        # fit_params.update({"verbose": True})
+        audit_model.fit(self.X_train, self.y_train, verbose=self.tuning_config.training_verbosity, **fit_params)
+        return audit_model
 
 
 if __name__ == "__main__":
@@ -317,4 +326,5 @@ if __name__ == "__main__":
     if False:
         print(preview_parameter_space(parameter_space_registry.create_parameter_space_fn("xgboost")))
     experiment.optimize()
-    print(experiment.get_learning_curve())
+    audit_model = experiment.get_learning_curve()
+    plot_learning_curve(xgb_model=audit_model, metrics_to_plot=["auc"], legend_labels=["train", "val"])

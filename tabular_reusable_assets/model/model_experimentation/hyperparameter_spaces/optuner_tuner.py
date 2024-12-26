@@ -10,8 +10,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from xgboost import XGBClassifier
 
+from . import parameter_space_registry
 from .base import BaseModelTuner
-from .parameter_spaces import parameter_space_registry
 from .utils import preview_parameter_space
 
 
@@ -264,6 +264,14 @@ class ModelHyperParameterTuner(BaseModelTuner):
         final_model.fit(self.X_train, self.y_train, **fit_params)
         return self
 
+    def get_learning_curve(self):
+        """Retrain the model with the best parameters and return the learning curve"""
+        final_model = self.base_model(**self.best_params)
+        fit_params = self.tuning_config.fit_params.copy()
+        fit_params.update({"verbose": True})
+        final_model.fit(self.X_train, self.y_train, **fit_params)
+        return final_model.evals_result()
+
 
 if __name__ == "__main__":
     base_params = {"eval_metric": "auc", "objective": "binary:logistic"}
@@ -309,3 +317,4 @@ if __name__ == "__main__":
     if False:
         print(preview_parameter_space(parameter_space_registry.create_parameter_space_fn("xgboost")))
     experiment.optimize()
+    print(experiment.get_learning_curve())

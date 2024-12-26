@@ -54,3 +54,6 @@ class HyperParameterSpaceRegistry:
             return param_space_class(trial).get_params()
 
         return param_space_fn
+
+
+parameter_space_registry = HyperParameterSpaceRegistry()

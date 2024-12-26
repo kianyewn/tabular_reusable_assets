@@ -1,7 +1,6 @@
 from typing import Any, Dict
 
 from .base import BaseModelHyperParameters
-from .registry import HyperParameterSpaceFunctionRegistry
 
 
 class XGBoostHyperParameters(BaseModelHyperParameters):
@@ -48,12 +47,3 @@ class CatBoostHyperParameters(BaseModelHyperParameters):
             "reg_lambda": self.trial.suggest_float("reg_lambda", 0.001, 25, log=True),
             "learning_rate": self.trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         }
-
-
-# Initialize the registry
-parameter_space_registry = HyperParameterSpaceFunctionRegistry()
-
-# Register parameter spaces
-parameter_space_registry.register("xgboost", XGBoostHyperParameters)
-parameter_space_registry.register("lightgbm", LightGBMHyperParameters)
-parameter_space_registry.register("catboost", CatBoostHyperParameters)

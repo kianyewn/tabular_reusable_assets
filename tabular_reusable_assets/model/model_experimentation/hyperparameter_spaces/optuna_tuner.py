@@ -201,7 +201,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
                 verbose=self.tuning_config.training_verbosity,
                 **self.tuning_config.fit_params,
             )
-
+            # TODO: Create a function to do the scoring
             # Store best iteration
             trial.set_user_attr("best_iteration", model.best_iteration)
             return model.best_score

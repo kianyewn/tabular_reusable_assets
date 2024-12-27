@@ -34,7 +34,7 @@ class TuningConfig:
     fit_params: Dict[str, Any] = field(default_factory=dict)
 
     # Evaluation parameters
-    scorer_name: str = 'roc_auc'
+    scorer_metric: str = "roc_auc"
 
     # Storage
     study_dir: Optional[str] = None  # Changed to Optional with None default
@@ -102,12 +102,19 @@ class ModelHyperParameterTuner(BaseModelTuner):
         self.scorer = self.init_scorer()
 
     def init_scorer(self):
-        if isinstance(self.tuning_config.scorer_name, str):
-            scorer = get_scorer(self.tuning_config.scorer_name)
-        elif isinstance(self.tuning_config.scorer_name, list):
-            # if it is a list, then score is based on first metric defined in list
-            scorer = get_scorer(self.tuning_config.scorer_name[0])
-        return scorer
+        try:
+            if isinstance(self.tuning_config.scorer_metric, str):
+                scoring_metric = self.tuning_config.scorer_metric
+                scorer = get_scorer(scoring_metric)
+            elif isinstance(self.tuning_config.scorer_metric, list):
+                # if it is a list, then score is based on first metric defined in list
+                scoring_metric = self.tuning_config.scorer_metric[0]
+                scorer = get_scorer(scoring_metric)
+            self.logger.info(f"Scorer initialized and evaluation will be based on: `{scoring_metric}`")
+            return scorer
+        except Exception as e:
+            self.logger.error(f"Error initializing scorer: {str(e)}")
+            raise
 
     def _setup_logging(self):
         """Setup logging configuration"""
@@ -181,10 +188,14 @@ class ModelHyperParameterTuner(BaseModelTuner):
 
         if isinstance(self.base_model, XGBClassifier):
             callbacks.append(
-                optuna.integration.XGBoostPruningCallback(trial, f"validation_1-{self.tuning_config.metric}")
+                optuna.integration.XGBoostPruningCallback(
+                    trial, f"validation_1-{self.tuning_config.params.get('eval_metric')}"
+                )
             )
         elif hasattr(self.base_model, "__module__") and "lightgbm" in self.base_model.__module__:
-            callbacks.append(optuna.integration.LightGBMPruningCallback(trial, self.tuning_config.metric))
+            callbacks.append(
+                optuna.integration.LightGBMPruningCallback(trial, self.tuning_config.params.get("eval_metric"))
+            )
 
         elif hasattr(self.base_model, "__module__") and "catboost" in self.base_model.__module__:
             callbacks.append(optuna.integration.CatBoostPruningCallback(trial))
@@ -214,11 +225,10 @@ class ModelHyperParameterTuner(BaseModelTuner):
                 verbose=self.tuning_config.training_verbosity,
                 **self.tuning_config.fit_params,
             )
-            # TODO: Create a function to do the scoring
             score = self.scorer(model, self.X_val, self.y_val)
             # Store best iteration
             trial.set_user_attr("best_iteration", model.best_iteration)
-            return score # model.best_score
+            return score  # model.best_score
 
         except Exception as e:
             self.logger.error(f"Trial {trial.number} failed: {str(e)}")
@@ -313,10 +323,9 @@ if __name__ == "__main__":
         timeout=60 * 30,
         mode="n_trials",
         duration=60 * 30,
-        metric=["auc", "logloss"],
         base_params={**base_params, **boosting_params},
         fit_params={"eval_set": [(X_train, y_train), (X_val, y_val)]},
-        scorer_name="roc_auc",
+        scorer_metric="roc_auc",
         storage_type="in_memory",
         study_dir=None,  # "trained_models/optuna_studies",
         random_state=42,

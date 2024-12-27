@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, List, Optional
 import optuna
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.metrics import get_scorer
 from xgboost import XGBClassifier
 
 from tabular_reusable_assets.model.model_utils import plot_learning_curve
@@ -32,9 +31,8 @@ class TuningConfig:
     metric: str = None
     base_params: Dict[str, Any] = field(default_factory=dict)
     fit_params: Dict[str, Any] = field(default_factory=dict)
-
-    # Evaluation parameters
-    scorer_name: str = 'roc_auc'
+    stage_1_fixed_learning_rate: float = 0.8
+    stage_2_fixed_learning_rate: float = 0.01
 
     # Storage
     study_dir: Optional[str] = None  # Changed to Optional with None default
@@ -99,15 +97,6 @@ class ModelHyperParameterTuner(BaseModelTuner):
         self.study = self._create_study()
         self.best_score = float("-inf")
         self.best_model = None
-        self.scorer = self.init_scorer()
-
-    def init_scorer(self):
-        if isinstance(self.tuning_config.scorer_name, str):
-            scorer = get_scorer(self.tuning_config.scorer_name)
-        elif isinstance(self.tuning_config.scorer_name, list):
-            # if it is a list, then score is based on first metric defined in list
-            scorer = get_scorer(self.tuning_config.scorer_name[0])
-        return scorer
 
     def _setup_logging(self):
         """Setup logging configuration"""
@@ -173,6 +162,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
 
         # Update with base parameters
         params.update(self.tuning_config.base_params)
+        params.update({"learning_rate": self.tuning_config.stage_1_fixed_learning_rate})
         return params
 
     def _get_model_callbacks(self, trial: optuna.Trial) -> List:
@@ -215,17 +205,16 @@ class ModelHyperParameterTuner(BaseModelTuner):
                 **self.tuning_config.fit_params,
             )
             # TODO: Create a function to do the scoring
-            score = self.scorer(model, self.X_val, self.y_val)
             # Store best iteration
             trial.set_user_attr("best_iteration", model.best_iteration)
-            return score # model.best_score
+            return model.best_score
 
         except Exception as e:
             self.logger.error(f"Trial {trial.number} failed: {str(e)}")
             raise optuna.exceptions.TrialPruned()
 
-    def optimize(self) -> Dict[str, Any]:
-        """Run optimization"""
+    def stage_1_optimize(self) -> Dict[str, Any]:
+        """Run optimization for stage 1, to find the best tree parameters"""
         self.logger.info(f"Starting optimization for {self.tuning_config.study_name}")
 
         try:
@@ -316,7 +305,6 @@ if __name__ == "__main__":
         metric=["auc", "logloss"],
         base_params={**base_params, **boosting_params},
         fit_params={"eval_set": [(X_train, y_train), (X_val, y_val)]},
-        scorer_name="roc_auc",
         storage_type="in_memory",
         study_dir=None,  # "trained_models/optuna_studies",
         random_state=42,

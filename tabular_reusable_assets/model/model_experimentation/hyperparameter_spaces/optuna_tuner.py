@@ -180,6 +180,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
 
         # Update with base parameters
         params.update(self.tuning_config.base_params)
+        self.logger.info(f"Params: {params}")
         return params
 
     def _get_model_callbacks(self, trial: optuna.Trial) -> List:
@@ -294,6 +295,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
         fit_params = self.tuning_config.fit_params.copy()
         fit_params.pop("eval_set", None)
         final_model.fit(self.X_train, self.y_train, **fit_params)
+        self.final_model = final_model
         return self
 
     def get_learning_curve(self):
@@ -352,3 +354,4 @@ if __name__ == "__main__":
     experiment.optimize()
     audit_model = experiment.get_learning_curve()
     plot_learning_curve(xgb_model=audit_model, metrics_to_plot=["auc"], legend_labels=["train", "val"])
+    print(f"Final validation score: {experiment.scorer(experiment.final_model, X_val, y_val)}")

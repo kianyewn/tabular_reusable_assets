@@ -5,9 +5,9 @@ import optuna
 from .base import BaseParameterSpaceFunction
 
 
-def preview_parameter_space(param_space_fn: BaseParameterSpaceFunction) -> Dict[str, Any]:
+def optuna_preview_parameter_space(param_space_fn: BaseParameterSpaceFunction) -> Dict[str, Any]:
     """
-    Preview the parameter space by generating one set of parameters.
+    Preview the parameter space by generating one set of parameters for Optuna
 
     Args:
         param_space_fn: Function that defines the parameter space

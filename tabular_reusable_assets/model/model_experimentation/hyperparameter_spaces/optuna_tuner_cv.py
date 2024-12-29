@@ -20,6 +20,10 @@ from . import parameter_space_registry
 from .base import BaseModelTuner
 
 
+# Setting the logging level WARNING, the INFO logs are suppressed.
+# optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+
 @dataclass
 class TuningConfig:
     # Study configuration
@@ -192,7 +196,7 @@ class ModelHyperParameterTunerCV(BaseModelTuner):
 
         # Update with base parameters
         params.update(self.tuning_config.base_params)
-        self.logger.info(f"Params: {params}")
+        # self.logger.info(f"Params: {params}")
         return params
 
     def _get_model_callbacks(self, trial: optuna.Trial) -> List:
@@ -232,7 +236,6 @@ class ModelHyperParameterTunerCV(BaseModelTuner):
                 callbacks=callbacks,
             )
             if self.tuning_config.custom_cv_scoring:
-                logger.info(f"Using custom CV scoring: {self.tuning_config.custom_cv_scoring}")
                 _, cv_summary_stats = self.tuning_config.custom_cv_scoring(
                     data=self.model_master_df,
                     model=model,
@@ -244,7 +247,7 @@ class ModelHyperParameterTunerCV(BaseModelTuner):
                     error_handling=self.tuning_config.cv_error_handling,
                     **self.tuning_config.custom_cv_scoring_params,
                 )
-                score = cv_summary_stats[self.tuning_config.cv_agg_method][f'test_{self.tuning_config.scorer_metric}']
+                score = cv_summary_stats[self.tuning_config.cv_agg_method][f"test_{self.tuning_config.scorer_metric}"]
                 if score > self.best_score:
                     self.best_score = score
                     self.best_model = cv_summary_stats["best_iteration"]
@@ -263,7 +266,7 @@ class ModelHyperParameterTunerCV(BaseModelTuner):
                     fit_params=self.tuning_config.fit_params,
                     error_handling=self.tuning_config.cv_error_handling,
                 )
-                score = cv_summary_stats[self.tuning_config.cv_agg_method][f'test_{self.tuning_config.scorer_metric}']
+                score = cv_summary_stats[self.tuning_config.cv_agg_method][f"test_{self.tuning_config.scorer_metric}"]
                 if score > self.best_score:
                     self.best_score = score
                     self.best_model = cv_summary_stats["model"]

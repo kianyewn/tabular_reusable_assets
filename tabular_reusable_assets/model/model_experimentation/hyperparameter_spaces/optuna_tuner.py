@@ -15,7 +15,7 @@ from tabular_reusable_assets.model.model_utils import plot_learning_curve
 
 from . import parameter_space_registry
 from .base import BaseModelTuner
-from .utils import preview_parameter_space
+from .utils import optuna_preview_parameter_space
 
 
 @dataclass
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     )
     # preview parameter space
     if False:
-        print(preview_parameter_space(parameter_space_registry.create_parameter_space_fn("xgboost")))
+        print(optuna_preview_parameter_space(parameter_space_registry.create_parameter_space_fn("xgboost")))
     experiment.optimize()
     audit_model = experiment.get_learning_curve()
     plot_learning_curve(xgb_model=audit_model, metrics_to_plot=["auc"], legend_labels=["train", "val"])

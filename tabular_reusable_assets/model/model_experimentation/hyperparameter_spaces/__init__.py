@@ -1,6 +1,6 @@
 from .parameter_spaces import CatBoostHyperParameters, LightGBMHyperParameters, XGBoostHyperParameters
 from .registry import parameter_space_registry
-from .utils import preview_parameter_space
+from .utils import optuna_preview_parameter_space
 
 
 # Register parameter spaces
@@ -13,5 +13,5 @@ __all__ = [
     "LightGBMHyperParameters",
     "CatBoostHyperParameters",
     "parameter_space_registry",
-    "preview_parameter_space",
+    "optuna_preview_parameter_space",
 ]

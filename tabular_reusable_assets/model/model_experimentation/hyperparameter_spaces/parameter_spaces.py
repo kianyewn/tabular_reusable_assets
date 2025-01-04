@@ -19,6 +19,22 @@ class XGBoostHyperParameters(BaseModelHyperParameters):
         }
 
 
+class TwoStageXGBoostHyperParameters(BaseModelHyperParameters):
+    """XGBoost-specific hyperparameter space definition"""
+
+    def get_params(self) -> Dict[str, Any]:
+        return {
+            "tree_method": self.trial.suggest_categorical("tree_method", ["approx", "hist"]),
+            "max_depth": self.trial.suggest_int("max_depth", 3, 12),
+            "min_child_weight": self.trial.suggest_int("min_child_weight", 1, 250),
+            "subsample": self.trial.suggest_float("subsample", 0.1, 1.0),
+            "colsample_bynode": self.trial.suggest_float("colsample_bynode", 0.1, 1.0),
+            "reg_lambda": self.trial.suggest_float("reg_lambda", 0.001, 25, log=True),
+            "reg_alpha": self.trial.suggest_float("reg_alpha", 0.001, 50, log=True),
+            "learning_rate": self.trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        }
+
+
 class LightGBMHyperParameters(BaseModelHyperParameters):
     """LightGBM-specific hyperparameter space definition"""
 

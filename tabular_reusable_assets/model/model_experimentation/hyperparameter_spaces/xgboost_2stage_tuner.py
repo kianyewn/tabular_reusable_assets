@@ -1,9 +1,3 @@
-import os
-
-
-print("Current working directory:", os.getcwd())
-print("Script location:", os.path.abspath(__file__))
-
 import logging
 import time
 from dataclasses import dataclass, field
@@ -19,11 +13,8 @@ from sklearn.base import BaseEstimator
 from sklearn.metrics import get_scorer
 from xgboost import XGBClassifier
 
-from tabular_reusable_assets.model.model_utils import plot_learning_curve
-
 from . import parameter_space_registry
 from .base import BaseModelTuner
-from .utils import preview_parameter_space
 
 
 class TuningStage(Enum):
@@ -65,8 +56,8 @@ class TuningConfig:
     param_space_fn: Optional[Callable[[optuna.Trial], Dict[str, Any]]] = None
 
     def __post_init__(self):
-        if base_params.get("random_state", None) is None:
-            base_params["random_state"] = self.random_state
+        if self.base_params.get("random_state", None) is None:
+            self.base_params["random_state"] = self.random_state
 
     def set_stage_1_learning_rate(self, learning_rate: float):
         self.stage_1_fixed_learning_rate = learning_rate
@@ -81,7 +72,7 @@ class TuningConfig:
         return {"learning_rate": self.stage_2_fixed_learning_rate, "n_trials": self.stage_2_n_trials}
 
 
-class ModelHyperParameterTuner(BaseModelTuner):
+class TreebasedHyperparameterTuner(BaseModelTuner):
     """
     Handles hyperparameter optimization for machine learning models using Optuna.
 
@@ -119,7 +110,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
         self.base_model = base_model
         self.verbose = verbose
         self.custom_objective = custom_objective
-        self.input_cols = input_cols
+        self.input_cols = kwargs.get("input_cols", input_cols)
         # Setup logging
         self._setup_logging()
         # Initialize study
@@ -166,27 +157,12 @@ class ModelHyperParameterTuner(BaseModelTuner):
         model = self.base_model(**base_params)
         start_time = time.time()
         model.fit(
-            self.X_train, self.y_train, **self.tuning_config.fit_params, verbose=self.tuning_config.training_verbosity
+            self.X_train[self.input_cols],
+            self.y_train,
+            **self.tuning_config.fit_params,
+            verbose=self.tuning_config.training_verbosity,
         )
-        score = self.scorer(model, self.X_val, self.y_val)
-        end_time = time.time()
-        self.logger.info(
-            f"Time taken to train model: {(end_time - start_time):.2f} seconds, best_iteration: {model.best_iteration}, score: {score:2f}"
-        )
-        return model
-
-    def stage_2_fixed_learning_rate_exploration(self, learning_rate: float = 0.8):
-        """Explore the effect of a fixed learning rate on the model's performance"""
-        stage_1_best_params = self.stage_1_best_params
-        stage_1_best_params["learning_rate"] = learning_rate
-        model = self.base_model(**stage_1_best_params)
-        start_time = time.time()
-        logger.info(f"Tuning Config: {self.tuning_config.fit_params}")
-        logger.info(f"Tuning Config: {stage_1_best_params}")
-        model.fit(
-            self.X_train, self.y_train, **self.tuning_config.fit_params, verbose=self.tuning_config.training_verbosity
-        )
-        score = self.scorer(model, self.X_val, self.y_val)
+        score = self.scorer(model, self.X_val[self.input_cols], self.y_val)
         end_time = time.time()
         self.logger.info(
             f"Time taken to train model: {(end_time - start_time):.2f} seconds, best_iteration: {model.best_iteration}, score: {score:2f}"
@@ -234,15 +210,18 @@ class ModelHyperParameterTuner(BaseModelTuner):
             # Fall back to default parameter space
             params = self.tuning_config.optuna_params_space
 
+        # logger.info(f"params: {params}")
         # Update with base parameters
         params.update(self.tuning_config.base_params)
         # self.logger.info(f"Params: {params}")
 
         # Override learning rate based on stage
         stage_params = self.tuning_config.get_stage_params()
-        params["learning_rate"] = stage_params["learning_rate"]
+
+        params.update({"learning_rate": stage_params["learning_rate"]})
+        # params.pop('learning_rate', None)
         # logger.info(f"params: {params}")
-        return params
+        return params.copy()
 
     def _get_model_callbacks(self, trial: optuna.Trial) -> List:
         """Get model-specific callbacks for optimization"""
@@ -265,6 +244,9 @@ class ModelHyperParameterTuner(BaseModelTuner):
         try:
             # Get parameters for this trial
             params = self._get_parameter_space(trial)
+            # params.pop('learning_rate', None)
+            # logger.info(f"params: {params}")
+            # params.update({"learning_rate": self.tuning_config.get_stage_params()["learning_rate"]})
 
             # Create and train model
             # Get model-specific callbacks
@@ -273,47 +255,120 @@ class ModelHyperParameterTuner(BaseModelTuner):
             model = self.base_model(
                 **params,
                 n_jobs=self.tuning_config.n_jobs,  # Fixed: changed self.config to self.tuning_config
-                random_state=self.tuning_config.random_state,  # Fixed: changed self.config to self.tuning_config
+                # random_state=self.tuning_config.random_state,  # Fixed: changed self.config to self.tuning_config
                 callbacks=callbacks,
             )
 
             model.fit(
-                self.X_train,
+                self.X_train[self.input_cols],
                 self.y_train,
                 verbose=self.tuning_config.training_verbosity,
                 **self.tuning_config.fit_params,
             )
             # TODO: Create a function to do the scoring
+            print(f"model.get_params(): {model.get_params()}")
+            score = self.scorer(model, self.X_val, self.y_val)
             # Store best iteration
             trial.set_user_attr("best_iteration", model.best_iteration)
-            return model.best_score
+            return score  # model.best_score
 
         except Exception as e:
             self.logger.error(f"Trial {trial.number} failed: {str(e)}")
             raise optuna.exceptions.TrialPruned()
 
-    def optimize(self) -> "ModelHyperParameterTuner":
-        """Run two-stage optimization"""
-        self.logger.info("Starting two-stage hyperparameter optimization")
+    def optimize(self) -> "TreebasedHyperparameterTuner":
+        """Run two-stage optimization: Stage 1 tunes hyperparameters, Stage 2 retrains with lower learning rate"""
+        self.logger.info("Starting two-stage optimization process")
 
         try:
             # Stage 1: Optimize tree parameters with high learning rate
-            self.logger.info("Starting Stage 1 optimization")
-            stage_1_results = self._run_stage(TuningStage.STAGE_1)
+            self.logger.info("Starting Stage 1: Hyperparameter optimization")
+            self.stage_1_results = self._run_stage(TuningStage.STAGE_1)
 
-            # Stage 2: Fine-tune with low learning rate
-            self.logger.info("Starting Stage 2 optimization")
-            stage_2_results = self._run_stage(TuningStage.STAGE_2)
+            # Stage 2: Retrain with best parameters and lower learning rate to get updated best_iteration
+            self.logger.info("Starting Stage 2: Retrain with best parameters and lower learning rate")
+            self.stage_2_results = self._run_stage_2(
+                best_params=self.stage_1_results["best_params"],
+                learning_rate=self.tuning_config.stage_2_fixed_learning_rate,
+            )
 
-            # Store final results
-            self.stage_1_results = stage_1_results
-            self.stage_2_results = stage_2_results
+            # Stage 3: Retrain with updated best_iteration on combined data
+            self.logger.info("Starting Stage 3: Final training with lower learning rate")
+            self.final_stage_results = self._run_final_stage(
+                best_params=self.stage_1_results["best_params"],
+                learning_rate=self.tuning_config.stage_2_fixed_learning_rate,
+            )
 
             return self
 
         except Exception as e:
             self.logger.error(f"Optimization failed: {str(e)}")
             raise
+
+    def _run_stage_2(self, best_params: Dict[str, Any], learning_rate: float, best_iteration):
+        """Run stage 2: retrain model with lower learning rate, and find the updated best_iteration"""
+        # Update parameters for final training
+        final_params = best_params.copy()
+        final_params["learning_rate"] = learning_rate
+
+        # Remove early stopping related parameters
+        stage_2_model = self.base_model(**final_params)
+        stage_2_model.fit(
+            self.X_train[self.input_cols],
+            self.y_train,
+            **self.tuning_config.fit_params,
+            verbose=self.tuning_config.training_verbosity,
+        )
+        score = self.scorer(stage_2_model, self.X_val[self.input_cols], self.y_val)
+        logger.info(
+            f"Stage 2 model: Updated learning_rate:{learning_rate} "
+            f"Updated best iteration: {stage_2_model.best_iteration} "
+            f"Updated val_score: {score} "
+            f"\nBest_params: {final_params}",
+        )
+        self.stage_2_model = stage_2_model
+        return {
+            "study": None,
+            "best_params": final_params,
+            "best_score": score,
+            "best_model": stage_2_model,
+            "best_iteration": stage_2_model.best_iteration,
+            "trials_dataframe": None,
+        }
+
+    def _run_final_stage(self, best_params: Dict[str, Any], learning_rate: float) -> Dict[str, Any]:
+        """
+        Run final stage: retrain model with lower learning rate on combined data
+
+        Args:
+            best_params: Best parameters from stage 1
+            learning_rate: Lower learning rate for final training
+        """
+        self.logger.info(f"Running final stage with learning rate: {learning_rate}")
+
+        # Update parameters for final training
+        final_params = best_params.copy()
+        final_params["learning_rate"] = learning_rate
+
+        # Remove early stopping related parameters
+        final_params.pop("early_stopping_rounds", None)
+        final_params.pop("n_estimators", None)
+
+        # Combine training and validation data
+        combined_X = pd.concat([self.X_train[self.input_cols], self.X_val[self.input_cols]])
+        combined_y = pd.concat([self.y_train, self.y_val])
+
+        # Create and train final model
+        final_model = self.base_model(**final_params)
+
+        # Train without evaluation set
+        fit_params = self.tuning_config.fit_params.copy()
+        fit_params.pop("eval_set", None)
+
+        self.logger.info("Training final model on combined data")
+        final_model.fit(combined_X, combined_y, **fit_params, verbose=self.tuning_config.training_verbosity)
+
+        return {"best_params": final_params, "best_model": final_model, "combined_data_size": len(combined_X)}
 
     def _run_stage(self, stage: TuningStage) -> Dict[str, Any]:
         """Run optimization for a specific stage"""
@@ -328,7 +383,12 @@ class ModelHyperParameterTuner(BaseModelTuner):
         )
 
         # Run optimization
-        study.optimize(self.objective, n_trials=stage_params["n_trials"], n_jobs=1)
+        study.optimize(
+            self.objective,
+            n_trials=stage_params["n_trials"],
+            n_jobs=self.tuning_config.n_jobs,  # Use the configured n_jobs instead of hardcoding to 1
+            show_progress_bar=True,  # Enable progress bar for better monitoring
+        )
 
         # Get best parameters and model
         best_params = study.best_trial.params
@@ -336,7 +396,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
         best_iteration = study.best_trial.user_attrs.get("best_iteration")
 
         # Train final model for this stage
-        self.logger.info(f"Best params: {best_params}")
+        logger.info(f"{stage.value} Best params: {best_params}")
         final_model = self._train_final_model(best_params, best_iteration)
 
         if stage == TuningStage.STAGE_1:
@@ -367,7 +427,7 @@ class ModelHyperParameterTuner(BaseModelTuner):
         fit_params = self.tuning_config.fit_params.copy()
         fit_params.pop("eval_set", None)
 
-        combined_X = pd.concat([self.X_train, self.X_val])
+        combined_X = pd.concat([self.X_train[self.input_cols], self.X_val[self.input_cols]])
         combined_y = pd.concat([self.y_train, self.y_val])
         model.fit(combined_X, combined_y, **fit_params)
         return model
@@ -391,6 +451,14 @@ class ModelHyperParameterTuner(BaseModelTuner):
         if stage:
             results = self.stage_1_results if stage == TuningStage.STAGE_1 else self.stage_2_results
             title = f"Optimization History - {stage.value}"
+
+            # plot
+            fig, ax = plt.subplots(figsize=(15, 5))
+            df = results["trials_dataframe"]
+            ax.plot(df["number"], df["value"])
+            ax.set_title(title)
+            plt.tight_layout()
+            return fig
         else:
             # Plot both stages
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -418,43 +486,34 @@ if __name__ == "__main__":
     y_train = pd.read_csv("data/y_train.csv").reset_index(drop=True)
     y_val = pd.read_csv("data/y_val.csv").reset_index(drop=True)
     print(y_train["Survived"].value_counts())
+    input_cols = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
 
     config = TuningConfig(
         study_name="xgboost_two_stage_tuning",
         direction="maximize",
-        stage_1_fixed_learning_rate=0.8,
-        stage_2_fixed_learning_rate=0.01,
-        stage_1_n_trials=10,
+        stage_1_fixed_learning_rate=0.019,
+        stage_2_fixed_learning_rate=0.001,
+        stage_1_n_trials=50,
         stage_2_n_trials=10,
         metric="roc_auc",
         base_params={**base_params, **boosting_params},
-        fit_params={"eval_set": [(X_train, y_train), (X_val, y_val)]},
+        fit_params={"eval_set": [(X_train[input_cols], y_train), (X_val[input_cols], y_val)]},
         training_verbosity=False,
         random_state=42,
         param_space_fn=parameter_space_registry.create_parameter_space_fn("xgboost"),
     )
 
-    tuner = ModelHyperParameterTuner(
+    tuner = TreebasedHyperparameterTuner(
         X_train=X_train,
         X_val=X_val,
         y_train=y_train,
         y_val=y_val,
+        input_cols=input_cols,
         tuning_config=config,
         base_model=XGBClassifier,
     )
-    # Experiment to find a learning rate that that takes a few seconds (but performance is still okay)
-    tuner.stage_1_fixed_learning_rate_exploration(learning_rate=0.001)
-    tuner.set_stage_1_learning_rate(0.001)
-    stage_1_results = tuner._run_stage(TuningStage.STAGE_1)
-    tuner.stage_2_fixed_learning_rate_exploration(learning_rate=0.0001)
-    stage_2_results = tuner._run_stage(TuningStage.STAGE_2)
+    # Run the simplified two-stage process
+    tuner.optimize()
 
-    # tuner.optimize()
-
-    # stage1_model = tuner.get_best_model(TuningStage.STAGE_1)
-    # stage2_model = tuner.get_best_model(TuningStage.STAGE_2)
-
-    tuner.plot_optimization_history()
-
-    # stage1_curves = tuner.get_learning_curve(TuningStage.STAGE_1)
-    # stage2_curves = tuner.get_learning_curve(TuningStage.STAGE_2)
+    # Get the final model (stage 2)
+    final_model = tuner.get_best_model()

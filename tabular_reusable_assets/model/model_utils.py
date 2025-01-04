@@ -11,12 +11,84 @@ from loguru import logger
 from optuna import Trial
 from sklearn.base import BaseEstimator, clone
 from sklearn.metrics import get_scorer
-from sklearn.model_selection import BaseCrossValidator, RandomizedSearchCV, StratifiedGroupKFold, cross_val_score
+from sklearn.model_selection import (
+    BaseCrossValidator,
+    RandomizedSearchCV,
+    StratifiedGroupKFold,
+    cross_val_score,
+    cross_validate,
+)
 from xgboost import XGBClassifier
 
 
-def get_default_stratified_group_kfold(n_splits: int = 5, shuffle: bool = True, random_state: int = None):
+def get_default_stratified_group_kfold(n_splits: int = 5, shuffle: bool = False, random_state: int = None):
     return StratifiedGroupKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+
+
+def default_cross_validate(
+    estimator,
+    X,
+    y=None,
+    groups=None,
+    scoring=None,
+    cv=None,
+    n_jobs=None,
+    verbose=0,
+    fit_params=None,
+    error_score="raise",
+    return_indices=True,
+) -> Dict:
+    # cross validation score
+    cv_results = cross_validate(
+        estimator=estimator,
+        X=X,
+        y=y,
+        groups=groups,
+        scoring=scoring,
+        cv=cv,
+        n_jobs=n_jobs,
+        verbose=0,
+        params=fit_params,
+        error_score=error_score,
+        return_indices=return_indices,
+    )
+    return cv_results
+
+
+def cross_validate_and_create_folds(
+    estimator,
+    data,
+    feature_columns,
+    target_column,
+    fold_column="fold",
+    groups=None,
+    scoring=None,
+    cv=None,
+    n_jobs=None,
+    verbose=0,
+    fit_params=None,
+    error_score="raise",
+    return_indices=True,
+) -> Dict:
+    # cross validation score
+    cv_results = cross_validate(
+        estimator=estimator,
+        X=data[feature_columns],
+        y=data[target_column],
+        groups=groups,
+        scoring=scoring,
+        cv=cv,
+        n_jobs=n_jobs,
+        verbose=0,
+        params=fit_params,
+        error_score=error_score,
+        return_indices=return_indices,
+    )
+    test_indices = cv_results["indices"]["test"]
+    data[fold_column] = None
+    for fold_idx, test_indices in enumerate(test_indices):
+        data.loc[test_indices, fold_column] = fold_idx
+    return data, cv_results
 
 
 def create_group_folds(
@@ -46,6 +118,37 @@ def create_group_folds(
         )
         data.loc[val_index, fold_column] = fold
     return data
+
+
+def get_default_random_search_cv(
+    estimator: BaseEstimator,
+    param_distribution: Union[Dict, List[Dict]],
+    n_iter: int = 10,
+    scoring: Optional[Union[str, Callable, List, Tuple, Dict]] = None,
+    n_jobs: Optional[int] = None,
+    refit: Union[bool, str, Callable] = True,
+    cv: Optional[Union[int, BaseCrossValidator, Iterable]] = None,
+    verbose: int = 0,
+    pre_dispatch: str = "2*n_jobs",
+    random_state: Optional[int] = None,
+    error_score: Union[str, float] = "raise",
+    return_train_scores: bool = True,
+) -> RandomizedSearchCV:
+    estimator = RandomizedSearchCV(
+        estimator=estimator,
+        param_distributions=param_distribution,
+        n_iter=n_iter,
+        scoring=scoring,
+        n_jobs=n_jobs,
+        refit=refit,
+        cv=cv,
+        verbose=verbose,
+        pre_dispatch=pre_dispatch,
+        random_state=random_state,
+        error_score=error_score,
+        return_train_scores=return_train_scores,
+    )
+    return estimator
 
 
 def get_default_random_search_cv(

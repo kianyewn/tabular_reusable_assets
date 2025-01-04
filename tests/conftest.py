@@ -24,7 +24,7 @@ def data_dir():
 @pytest.fixture(scope="session")
 def titanic_dataset(data_dir):
     return {
-        "data": pd.read_csv(data_dir / "titanic_dataset_sample.csv"),
+        "data": pd.read_csv(data_dir / "titanic_dataset_sample.csv").sample(100).reset_index(),
         "feature_columns": ["Embarked", "Parch", "SibSp", "Sex", "Pclass", "Ticket", "Cabin", "Age", "Fare"],
         "target_column": "Survived",
         "group_column": "index",

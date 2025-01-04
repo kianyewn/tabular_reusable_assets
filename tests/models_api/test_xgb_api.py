@@ -14,6 +14,16 @@ def val(titanic_dataset):
     return data.sample(frac=0.5).reset_index(drop=True)
 
 
+def test_xgb_early_stopping_rounds_need_at_least_one_validation_set(titanic_dataset, train):
+    feature_columns = titanic_dataset["feature_columns"]
+    target_column = titanic_dataset["target_column"]
+
+    default_model = XGBClassifier(random_state=99, early_stopping_rounds=1)
+
+    with pytest.raises(ValueError, match="Must have at least 1 validation dataset for early stopping."):
+        default_model.fit(train[feature_columns], train[target_column])
+
+
 def test_xgb_best_score_api(titanic_dataset, train):
     feature_columns = titanic_dataset["feature_columns"]
     target_column = titanic_dataset["target_column"]

@@ -92,7 +92,13 @@ def cross_validate_and_create_folds(
 
 
 def create_group_folds(
-    cv: BaseCrossValidator, data: pd.DataFrame, target_column: str, group_id_column: str, fold_column: str = "fold"
+    cv: BaseCrossValidator,
+    data: pd.DataFrame,
+    feature_columns: str,
+    target_column: str,
+    group_id_column: str,
+    fold_column: str = "fold",
+    verbose: bool = False,
 ):
     """Creates cross-validation folds and adds them to the input DataFrame.
 
@@ -111,11 +117,15 @@ def create_group_folds(
         >>> cv = GroupKFold(n_splits=5)
         >>> df = create_group_folds(cv, data, 'target', 'group_id')
     """
-    n_splits = cv.get_n_splits(data, data[target_column], groups=data[group_id_column])
-    for fold, (train_index, val_index) in enumerate(cv.split(data, data[target_column], groups=data[group_id_column])):
-        logger.info(
-            f"Creating fold {fold+1}/{n_splits} with {len(train_index)} training and {len(val_index)} validation samples"
-        )
+    n_splits = cv.get_n_splits()
+    data[fold_column] = None
+    for fold, (train_index, val_index) in enumerate(
+        cv.split(data[feature_columns], data[target_column], groups=data[group_id_column])
+    ):
+        if verbose:
+            logger.info(
+                f"Creating fold {fold+1}/{n_splits} with {len(train_index)} training and {len(val_index)} validation samples"
+            )
         data.loc[val_index, fold_column] = fold
     return data
 

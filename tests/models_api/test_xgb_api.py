@@ -24,6 +24,18 @@ def test_xgb_early_stopping_rounds_need_at_least_one_validation_set(titanic_data
         default_model.fit(train[feature_columns], train[target_column])
 
 
+def test_xgb_sample_weight(titanic_dataset, train):
+    feature_columns = titanic_dataset["feature_columns"]
+    target_column = titanic_dataset["target_column"]
+
+    default_model = XGBClassifier(random_state=99)
+    # sample weight needs to be an array
+    train["sample_weight"] = 1
+    default_model.fit(train[feature_columns], train[target_column], sample_weight=train["sample_weight"])
+
+    assert train["sample_weight"].shape[0] == len(train)
+
+
 def test_xgb_best_score_api(titanic_dataset, train):
     feature_columns = titanic_dataset["feature_columns"]
     target_column = titanic_dataset["target_column"]

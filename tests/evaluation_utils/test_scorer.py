@@ -19,7 +19,7 @@ def trained_binary_classification_model(titanic_dataset):
     return default_model
 
 
-def test_scorer(titanic_dataset, trained_binary_classification_model):
+def test_scorer_binary_classification(titanic_dataset, trained_binary_classification_model):
     data = titanic_dataset["data"]
     feature_columns = titanic_dataset["feature_columns"]
     target_column = titanic_dataset["target_column"]
@@ -28,3 +28,13 @@ def test_scorer(titanic_dataset, trained_binary_classification_model):
 
     metrics = scorer(trained_binary_classification_model, data[feature_columns], data[target_column])
     assert list(metrics.keys()) == ["roc_auc", "accuracy", "precision", "recall"]
+
+
+def test_scorer_multi_classification(titanic_dataset, trained_binary_classification_model):
+    # TODO
+    pass
+
+
+def test_scorer_regression(titanic_dataset, trained_binary_classification_model):
+    # TODO
+    pass

@@ -365,9 +365,9 @@ def test_3_stage_tuning(titanic_dataset, default_xgb_estimator):
         params = row["params"]
         cv_results = default_cross_validate(
             estimator=XGBClassifier(random_state=99, **params),
-            X=data[feature_columns],
-            y=data[target_column],
-            groups=data[group_column],
+            X=data2[feature_columns],
+            y=data2[target_column],
+            groups=data2[group_column],
             scoring=(main_scoring,),
             cv=cv,
             return_indices=False,

@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+from pandas.testing import assert_series_equal
 
 from tabular_reusable_assets import processing_utils
+from tabular_reusable_assets.feature_analysis.processing_utils import Binning
 
 
 def test_equal_width_bin(titanic_dataset):
@@ -37,7 +39,9 @@ def test_psi_calculation_table(titanic_dataset):
     data["qAge"] = processing_utils.qcut(data, "Age", nbins=10)
     data2 = data.sample(frac=0.5, random_state=99)
 
-    indiv_psi_table = processing_utils.calculate_feat_psi_table(left_df=data, right_df=data2, feat="qAge")
+    indiv_psi_table = processing_utils.calculate_feat_psi_table(
+        left_df=data, right_df=data2, feat="qAge", rounding=False
+    )
     assert list(indiv_psi_table.columns) == ["var", "bin", "A", "B", "A-B", "ln(A/B)", "psi", "sum_psi"]
 
     # check element wise operation
@@ -81,3 +85,15 @@ def test_psi_good_and_bad_dummy():
     assert np.allclose(
         processing_utils.calculate_feat_psi(df1, df3, feat="col1")["sum_psi"].iloc[0], 0.810795895439714
     )
+
+
+def test_binner(titanic_dataset):
+    data = titanic_dataset["data"]
+    train = data
+    val = data
+    numerical_features = ["Age"]
+    binner = Binning(numerical_features=numerical_features, new_col=True)
+    binner.fit(train)
+    train2 = binner.transform(train)
+    val2 = binner.transform(val)
+    assert_series_equal(train2["Age_bin"], val2["Age_bin"])

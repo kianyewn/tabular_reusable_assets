@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def get_equal_width_bins(data_feat: pd.Series, nbins=10) -> List:
-    min_value = min(data_feat)
+    min_value = min(data_feat) * 0.95
     max_value = max(data_feat)
     delta = max_value - min_value
     breaks = [min_value + 0.1 * i * delta for i in range(nbins + 1)]
@@ -87,6 +87,7 @@ def equal_width_cut(
 def calculate_feat_psi_table(
     left_df, right_df, feat, left_df_name="A", right_df_name="B", eps=np.finfo(float).eps, rounding=True
 ):
+    """Return the table used to calculate the psi to inspect individual bin psi"""
     A = left_df_name
     B = right_df_name
     left_vc = left_df[feat].value_counts(dropna=False, normalize=True).rename(A).reset_index()
@@ -107,6 +108,7 @@ def calculate_feat_psi_table(
 
 
 def calculate_feat_psi(left_df, right_df, feat, left_df_name="A", right_df_name="B", eps=np.finfo(float).eps):
+    """Returns only two columns for report"""
     A = left_df_name
     B = right_df_name
     left_vc = left_df[feat].value_counts(dropna=False, normalize=True).rename(A).reset_index()
@@ -121,3 +123,32 @@ def calculate_feat_psi(left_df, right_df, feat, left_df_name="A", right_df_name=
     vc["sum_psi"] = vc["psi"].sum()
 
     return vc[["var", "sum_psi"]].drop_duplicates()
+
+
+class Binning:
+    def __init__(
+        self,
+        numerical_features,
+        nbins=10,
+        new_col=False,
+    ):
+        self.numerical_features = numerical_features
+        self.feat_bins = {}
+        self.nbins = nbins
+        self.new_col = new_col
+
+    def fit(self, X, y=None):
+        for feat in self.numerical_features:
+            breaks = get_quantile_bins(X[feat], nbins=self.nbins)
+            # prevent outliers
+            breaks[0] = -np.inf
+            breaks[-1] = np.inf
+            self.feat_bins[feat] = breaks
+        return
+
+    def transform(self, X, y=None):
+        X = X.copy()
+        for feat in self.numerical_features:
+            col_name = feat if not self.new_col else f"{feat}_bin"
+            X[col_name] = bin_feat(data=X, feat=feat, breaks=self.feat_bins[feat])
+        return X

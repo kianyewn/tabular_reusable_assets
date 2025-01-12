@@ -29,6 +29,22 @@ def test_quantile_bin(titanic_dataset):
     assert np.allclose(vc1.values, vc2.values)
 
 
+def test_psi_calculation_table(titanic_dataset):
+    data = titanic_dataset["data"]
+    # feature_columns = titanic_dataset["feature_columns"]
+    # target_column = titanic_dataset["target_column"]
+
+    data["qAge"] = processing_utils.qcut(data, "Age", nbins=10)
+    data2 = data.sample(frac=0.5, random_state=99)
+
+    indiv_psi_table = processing_utils.calculate_feat_psi_table(left_df=data, right_df=data2, feat="qAge")
+    assert list(indiv_psi_table.columns) == ["var", "bin", "A", "B", "A-B", "ln(A/B)", "psi", "sum_psi"]
+
+    # check element wise operation
+    row = indiv_psi_table.iloc[0]
+    assert np.allclose(row["A-B"] * row["ln(A/B)"], row["psi"])
+
+
 def test_psi_calculation(titanic_dataset):
     data = titanic_dataset["data"]
     # feature_columns = titanic_dataset["feature_columns"]
@@ -38,11 +54,7 @@ def test_psi_calculation(titanic_dataset):
     data2 = data.sample(frac=0.5, random_state=99)
 
     indiv_psi_table = processing_utils.calculate_feat_psi(left_df=data, right_df=data2, feat="qAge")
-    assert list(indiv_psi_table.columns) == ["var", "bin", "A", "B", "A-B", "ln(A/B)", "psi", "sum_psi"]
-
-    # check element wise operation
-    row = indiv_psi_table.iloc[0]
-    assert (row["A-B"] * row["ln(A/B)"]) == row["psi"]
+    assert list(indiv_psi_table.columns) == ["var", "sum_psi"]
 
 
 def test_psi_detect_different_distribution(titanic_dataset):
@@ -53,9 +65,19 @@ def test_psi_detect_different_distribution(titanic_dataset):
     # very small sample, psi should be high
     data2 = data.sample(1, random_state=99)
     indiv_psi_table = processing_utils.calculate_feat_psi(left_df=data, right_df=data2, feat="qAge")
-    assert indiv_psi_table["psi"].unique()[0] > 0.2
+    assert indiv_psi_table["sum_psi"].unique()[0] > 0.2
 
     # same sample, psi should be small close to 0
     data2 = data.sample(frac=1, random_state=99)
     indiv_psi_table = processing_utils.calculate_feat_psi(left_df=data, right_df=data2, feat="qAge")
-    assert indiv_psi_table["psi"].unique()[0] == 0
+    assert indiv_psi_table["sum_psi"].unique()[0] == 0
+
+
+def test_psi_good_and_bad_dummy():
+    df1 = pd.DataFrame({"col1": ["a"] * 2 + ["b"] * 10})
+    df2 = pd.DataFrame({"col1": ["a"] * 2 + ["b"] * 10})
+    df3 = pd.DataFrame({"col1": ["a"] * 7 + ["b"] * 5})
+    assert processing_utils.calculate_feat_psi(df1, df2, feat="col1")["sum_psi"].iloc[0] == 0
+    assert np.allclose(
+        processing_utils.calculate_feat_psi(df1, df3, feat="col1")["sum_psi"].iloc[0], 0.810795895439714
+    )

@@ -87,7 +87,7 @@ def test_psi_good_and_bad_dummy():
     )
 
 
-def test_binner(titanic_dataset):
+def test_binner_with_psi(titanic_dataset):
     data = titanic_dataset["data"]
     train = data
     val = data
@@ -97,3 +97,7 @@ def test_binner(titanic_dataset):
     train2 = binner.transform(train)
     val2 = binner.transform(val)
     assert_series_equal(train2["Age_bin"], val2["Age_bin"])
+
+    # calculate psi based on bin
+    psi = processing_utils.calculate_feat_psi(train2, val2, feat="Age_bin")
+    assert psi["sum_psi"].iloc[0] == 0

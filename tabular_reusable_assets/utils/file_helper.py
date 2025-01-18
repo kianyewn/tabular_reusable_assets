@@ -1,4 +1,5 @@
 import os
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -201,3 +202,9 @@ class PathParser:
     def iter_dir_with_ignore(self, path: str | Path, ignore: List[str]) -> List[Path]:
         """Iterate over directory with ignore."""
         return [p for p in self.iterdir(path) if p.name not in ignore]
+
+    def get_dir_before_date(file_path, date_regex=r"\d{4}-\d{2}-\d{2}"):
+        pattern = rf".*?(?={date_regex})"
+        # print(pattern)
+        match = re.search(pattern, file_path)
+        return match.group(0)

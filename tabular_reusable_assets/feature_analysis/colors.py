@@ -1,5 +1,6 @@
-import plotly.express as px
 import matplotlib.colors as mcolors
+import plotly.express as px
+
 
 # https://stackoverflow.com/questions/77886066/plotly-colormaps-in-matplotlib, plotly colors for matplotlib
 SAMPLES = 20

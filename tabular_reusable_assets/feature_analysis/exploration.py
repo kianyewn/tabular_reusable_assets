@@ -1,6 +1,7 @@
-from itertools import cycle
-from typing import List
 import traceback
+from itertools import cycle
+from typing import List, Optional
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -10,17 +11,22 @@ from loguru import logger
 
 from .colors import plotly_colors
 
+
 multiclass_perc_format = "{target}={lab}(%)"
 multiclass_se_format = "{target}={lab}(se)"
-binary_perc_format = "{target}=1(%)"
+binary_perc_format = "%{target}=1"
 binary_se_format = "{target}(se)%"
 regression_mean_format = "{target}(avg)"
 regression_se_format = "{target}(se)"
+
+predicted_proba_format = "{target}(avg)"
+predicted_proba_se_format = "{target}(se)"
 
 confidence = 0.95  # Change to your desired confidence level
 z_value = scipy.stats.norm.ppf((1 + confidence) / 2.0)
 
 alpha = 0.05
+
 
 def t_value(df):
     return scipy.stats.t.ppf(1 - alpha / 2, df)
@@ -37,18 +43,19 @@ def get_equal_width_bins(data_feat: pd.Series, nbins=10) -> List:
 def get_quantile_bins(data_feat: pd.Series, nbins=10) -> List:
     quantiles = np.linspace(start=0, stop=1, num=nbins)
     breaks = [data_feat.quantile(q) for q in quantiles]
+    breaks[0] = breaks[0] * 0.99 if breaks[0] > 0 else breaks[0] * 1.01
     # print(data_feat)
-    # print(breaks)
+    # print(breaks, quantiles)
+    breaks[0] = -np.inf
+    breaks[-1] = np.inf
     return breaks
 
 
-def classification_plotly_plot_numerical_feature(
-    data, feat, target, plot_df, error_bars=False
-):
+def classification_plotly_plot_numerical_feature(data, feat, target, plot_df, error_bars=False):
     fig = go.Figure()
 
-    target_rate_col = binary_perc_format.format(target=target)
-    target_se_col = binary_se_format.format(target=target)
+    target_rate_col = binary_perc_format.format(target=target[0] if isinstance(target, list) else target)
+    target_se_col = binary_se_format.format(target=target[0] if isinstance(target, list) else target)
 
     fig.add_trace(
         go.Bar(
@@ -77,31 +84,63 @@ def classification_plotly_plot_numerical_feature(
     )
 
     # Target distribution plot across features
-    fig.add_trace(
-        go.Scatter(
-            x=plot_df.index,
-            y=plot_df[target_rate_col],
-            name=target_rate_col,
-            text=plot_df[target_rate_col].apply(str),
-            error_y=dict(
-                type="data",  # value of error bar given in data coordinates,
-                array=round(plot_df[target_se_col], 4) * 1,
-                color="grey",
+    if isinstance(target, str):
+        fig.add_trace(
+            go.Scatter(
+                x=plot_df.index,
+                y=plot_df[target_rate_col],
+                name=f"Perc {target_rate_col}",
+                text=plot_df[target_rate_col].apply(str),
+                error_y=dict(
+                    type="data",  # value of error bar given in data coordinates,
+                    array=round(plot_df[target_se_col], 4) * 1,
+                    color="grey",
+                )
+                if error_bars
+                else None,
+                # customdata=[round(eda_data["pos_rate_v"],4)*1],
+                marker_color="#ff7f0e",
+                texttemplate="%{text:.1%}",
+                textposition="bottom right",
+                hovertemplate="%{y:.1%} (\u00b1%{error_y.array:.1%})" if error_bars else "%{y:.1%}",
+                # mode='lines+text+markers',
+                textfont=dict(color="#ff7f0e"),  # Text styling with red color
+                yaxis="y2",
+            ),
+        )
+    else:
+        colors = cycle(plotly_colors)
+        for target_y in target:
+            if "predicted_proba" in target_y:
+                target_rate_col = predicted_proba_format.format(target=target_y)
+                target_se_col = predicted_proba_se_format.format(target=target_y)
+            else:
+                target_rate_col = binary_perc_format.format(target=target_y)
+                target_se_col = binary_se_format.format(target=target_y)
+
+            fig.add_trace(
+                go.Scatter(
+                    x=plot_df.index,
+                    y=plot_df[target_rate_col],
+                    name=f"{target_rate_col}",
+                    text=plot_df[target_rate_col].apply(str),
+                    error_y=dict(
+                        type="data",  # value of error bar given in data coordinates,
+                        array=round(plot_df[target_se_col], 4) * 1,
+                        color="grey",
+                    )
+                    if error_bars
+                    else None,
+                    # customdata=[round(eda_data["pos_rate_v"],4)*1],
+                    marker_color=next(colors),
+                    texttemplate="%{text:.1%}",
+                    textposition="bottom right",
+                    hovertemplate="%{y:.1%} (\u00b1%{error_y.array:.1%})" if error_bars else "%{y:.1%}",
+                    # mode='lines+text+markers',
+                    textfont=dict(color="#ff7f0e"),  # Text styling with red color
+                    yaxis="y2",
+                ),
             )
-            if error_bars
-            else None,
-            # customdata=[round(eda_data["pos_rate_v"],4)*1],
-            marker_color="#ff7f0e",
-            texttemplate="%{text:.1%}",
-            textposition="bottom right",
-            hovertemplate="%{y:.1%} (\u00b1%{error_y.array:.1%})"
-            if error_bars
-            else "%{y:.1%}",
-            # mode='lines+text+markers',
-            textfont=dict(color="#ff7f0e"),  # Text styling with red color
-            yaxis="y2",
-        ),
-    )
 
     # Here we modify the tickangle of the xaxis, resulting in rotated labels.
     # fig.update_layout(barmode='group', xaxis_tickangle=-45)
@@ -111,9 +150,8 @@ def classification_plotly_plot_numerical_feature(
         yaxis1=dict(
             title="Count",
             color="#1f77b4",
-            range=[0, max(plot_df['counts'])*1.1]  # Extend the y-axis
+            range=[0, max(plot_df["counts"]) * 1.1],  # Extend the y-axis
         ),
-
         yaxis2=dict(
             title="Rate",
             color="#ff7f0e",
@@ -154,10 +192,7 @@ def classification_plotly_plot_numerical_feature(
     return plot_df
 
 
-
-def classification_multiclass_plotly_plot_numerical_feature(
-    data, feat, target, plot_df, error_bars=False
-):
+def classification_multiclass_plotly_plot_numerical_feature(data, feat, target, plot_df, error_bars=False):
     fig = go.Figure()
 
     fig.add_trace(
@@ -192,9 +227,7 @@ def classification_multiclass_plotly_plot_numerical_feature(
                 )
                 if error_bars
                 else None,
-                customdata=(plot_df[target_rate_col] * plot_df["counts"])
-                .rename("cnt")
-                .to_frame(),
+                customdata=(plot_df[target_rate_col] * plot_df["counts"]).rename("cnt").to_frame(),
                 yaxis="y2",
                 marker_color=next(colors),
                 texttemplate="%{text:.1%}%",
@@ -254,9 +287,7 @@ def classification_multiclass_plotly_plot_numerical_feature(
     return plot_df
 
 
-def regression_plotly_plot_numerical_feature(
-    data, feat, target, plot_df, error_bars=False
-):
+def regression_plotly_plot_numerical_feature(data, feat, target, plot_df, error_bars=False):
     fig = go.Figure()
 
     target_mean_col = regression_mean_format.format(target=target)
@@ -305,9 +336,7 @@ def regression_plotly_plot_numerical_feature(
             marker_color="#ff7f0e",
             texttemplate="%{text:.2f}",
             textposition="bottom right",
-            hovertemplate="%{y:.2f} (\u00b1%{error_y.array:.2f})"
-            if error_bars
-            else "%{y:.2f}",
+            hovertemplate="%{y:.2f} (\u00b1%{error_y.array:.2f})" if error_bars else "%{y:.2f}",
             # mode='lines+text+markers',
             textfont=dict(color="#ff7f0e"),  # Text styling with red color
             yaxis="y2",
@@ -322,7 +351,7 @@ def regression_plotly_plot_numerical_feature(
         yaxis1=dict(
             title="Count",
             color="#1f77b4",
-            range=[0, max(plot_df['counts'])*1.1]  # Extend the y-axis
+            range=[0, max(plot_df["counts"]) * 1.1],  # Extend the y-axis
         ),
         yaxis2=dict(
             title="Mean",
@@ -406,17 +435,13 @@ def plt_plot_numerical_feature_distribution(
         breaks = get_equal_width_bins(data[feat], nbins=nbins)
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    data["binned"] = pd.cut(
-        data[feat], bins=breaks, include_lowest=True, precision=1, duplicates="drop"
-    )
+    data["binned"] = pd.cut(data[feat], bins=breaks, include_lowest=True, precision=1, duplicates="drop")
     data_feat_counts = data["binned"].value_counts(dropna=False)
     data_feat_counts = data_feat_counts.sort_index()
     data_feat_counts.plot(kind="bar", ax=ax, label="count", color="C1")
 
     if show_percentages:
-        data_feat_perc = (
-            data["binned"].value_counts(dropna=False, normalize=True).sort_index()
-        )
+        data_feat_perc = data["binned"].value_counts(dropna=False, normalize=True).sort_index()
         x_axis_labels = ax.get_xticks()
         for index, val in enumerate(data_feat_counts):
             text = plt.text(
@@ -435,21 +460,12 @@ def plt_plot_numerical_feature_distribution(
         plotly_colors_iter = cycle(plotly_colors)
         for label in sorted(data[target].unique()):
             data_feat_pos_rate = (
-                data[data[target] == label]
-                .groupby("binned", observed=False)[target]
-                .mean()
-                .sort_index()
+                data[data[target] == label].groupby("binned", observed=False)[target].mean().sort_index()
             )
-            data_feat_pos_rate.plot(
-                ax=ax2, color=next(plotly_colors_iter), label=f"class={label}"
-            )
+            data_feat_pos_rate.plot(ax=ax2, color=next(plotly_colors_iter), label=f"class={label}")
     else:
-        data_feat_pos_rate = (
-            data.groupby("binned", observed=False)[target].mean().sort_index()
-        )
-        data_feat_pos_rate.plot(
-            ax=ax2, color=ax2_color, label=f"{target} (rate)", marker="X"
-        )
+        data_feat_pos_rate = data.groupby("binned", observed=False)[target].mean().sort_index()
+        data_feat_pos_rate.plot(ax=ax2, color=ax2_color, label=f"{target} (rate)", marker="X")
 
         if show_percentages:
             x_axis_labels = ax2.get_xticks()
@@ -501,20 +517,14 @@ def plt_plot_numerical_feature_distribution(
 
     # configure 2nd x-axis
     ax2.grid(False)
-    ax2.set_ylabel(
-        "Positive Rate", fontsize=label_fontsize, labelpad=10, color=ax2_color
-    )
+    ax2.set_ylabel("Positive Rate", fontsize=label_fontsize, labelpad=10, color=ax2_color)
     plt.setp(ax2.get_yticklabels(), fontsize=tick_fontsize, color=ax2_color)
-    fig.legend(
-        bbox_to_anchor=(1.0, 0.89), fontsize=tick_fontsize, loc=2, borderaxespad=0
-    )
+    fig.legend(bbox_to_anchor=(1.0, 0.89), fontsize=tick_fontsize, loc=2, borderaxespad=0)
     plt.tight_layout()
     return data_feat_pos_rate
 
 
-def regression_get_numerical_feature_stats_df(
-    data, feat, target=None, nbins=10, equal_quantiles=True, breaks=None
-):
+def regression_get_numerical_feature_stats_df(data, feat, target=None, nbins=10, equal_quantiles=True, breaks=None):
     if target is not None:
         feat_data = data[[feat, target]].copy()
     else:
@@ -537,9 +547,7 @@ def regression_get_numerical_feature_stats_df(
     ).rename("bin")
 
     feat_data_counts = feat_data["bin"].value_counts(dropna=False).rename("counts")
-    feat_data_perc = (
-        feat_data["bin"].value_counts(dropna=False, normalize=True).rename("perc")
-    )
+    feat_data_perc = feat_data["bin"].value_counts(dropna=False, normalize=True).rename("perc")
 
     stats_dfs = [feat_data_counts, feat_data_perc]
     # target counts and stats
@@ -550,9 +558,7 @@ def regression_get_numerical_feature_stats_df(
             .rename(regression_mean_format.format(target=target))
         )
         feat_data_target_se = z_value * (
-            feat_data.groupby("bin", observed=False)[target]
-            .std()
-            / np.sqrt(feat_data_counts)
+            feat_data.groupby("bin", observed=False)[target].std() / np.sqrt(feat_data_counts)
         ).rename(regression_se_format.format(target=target))
 
         stats_dfs.append(feat_data_target_mean)
@@ -575,22 +581,17 @@ def regression_get_categorical_feature_stats_df(
         feat_data = data[[feat]].copy()
 
     feat_data_counts = feat_data[feat].value_counts(dropna=False).rename("counts")
-    feat_data_perc = (
-        feat_data[feat].value_counts(dropna=False, normalize=True).rename("perc")
-    )
+    feat_data_perc = feat_data[feat].value_counts(dropna=False, normalize=True).rename("perc")
 
     stats_dfs = [feat_data_counts, feat_data_perc]
     # target counts and stats
 
     if target is not None:
         feat_data_target_mean = (
-            feat_data.groupby(feat, observed=False)[target]
-            .mean()
-            .rename(regression_mean_format.format(target=target))
+            feat_data.groupby(feat, observed=False)[target].mean().rename(regression_mean_format.format(target=target))
         )
         feat_data_target_se = z_value * (
-            feat_data.groupby(feat, observed=False)[target]
-            .std()
+            feat_data.groupby(feat, observed=False)[target].std()
             # ** 2
             / np.sqrt(feat_data_counts)
         ).rename(regression_se_format.format(target=target))
@@ -608,7 +609,10 @@ def classification_get_numerical_feature_stats_df(
     data, feat, target=None, nbins=10, equal_quantiles=True, breaks=None
 ):
     if target is not None:
-        feat_data = data[[feat, target]].copy()
+        if isinstance(target, list):
+            feat_data = data[[feat] + target].copy()
+        else:
+            feat_data = data[[feat, target]].copy()
     else:
         feat_data = data[[feat]].copy()
 
@@ -624,18 +628,16 @@ def classification_get_numerical_feature_stats_df(
         feat_data[feat],
         bins=breaks,
         include_lowest=True,
-        precision=1,
+        precision=0,
         duplicates="drop",
     ).rename("bin")
-
+    # print(feat_data)
     feat_data_counts = feat_data["bin"].value_counts(dropna=False).rename("counts")
-    feat_data_perc = (
-        feat_data["bin"].value_counts(dropna=False, normalize=True).rename("perc")
-    )
+    feat_data_perc = feat_data["bin"].value_counts(dropna=False, normalize=True).rename("perc")
 
     stats_dfs = [feat_data_counts, feat_data_perc]
     # target counts and stats
-    if target is not None:
+    if target is not None and not isinstance(target, list):
         if feat_data[target].nunique() > 2:
             unique_targets = sorted(feat_data[target].unique())
             for lab in unique_targets:
@@ -647,7 +649,7 @@ def classification_get_numerical_feature_stats_df(
                 )
 
                 feat_data_target_se = z_value * np.sqrt(
-                    (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts 
+                    (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts
                 )
                 # feat_data_target_se = (
                 #     feat_data.groupby("bin", observed=False)[f"Actual={lab}"]
@@ -656,41 +658,55 @@ def classification_get_numerical_feature_stats_df(
                 #     ** 2
                 # )
 
-                feat_data_target_se = feat_data_target_se.rename(
-                    multiclass_se_format.format(target=target, lab=lab)
-                )
+                feat_data_target_se = feat_data_target_se.rename(multiclass_se_format.format(target=target, lab=lab))
 
                 stats_dfs.append(feat_data_target_perc)
                 stats_dfs.append(feat_data_target_se)
 
         else:
-            feat_data_target_perc = (
-                feat_data.groupby("bin", observed=False)[target]
-                .mean()
-                .rename(binary_perc_format.format(target=target))
-            )
+            if isinstance(target, str):
+                feat_data_target_perc = (
+                    feat_data.groupby("bin", observed=False, dropna=False)[target]
+                    .mean()
+                    .rename(binary_perc_format.format(target=target))
+                )
 
-            ## Formulae for variance for numerical feature
-            # feat_data_target_se = (
-            #     feat_data.groupby("bin", observed=False)[target]
-            #     .std()
-            #     .rename(binary_se_format.format(target=target))
-            #     # ** 2
-            # )
+                ## Formulae for variance for numerical feature
+                # feat_data_target_se = (
+                #     feat_data.groupby("bin", observed=False)[target]
+                #     .std()
+                #     .rename(binary_se_format.format(target=target))
+                #     # ** 2
+                # )
+
+                feat_data_target_se = z_value * np.sqrt(
+                    (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts
+                )
+
+                ## Formulae for bernoulli distribution standard deviation
+                # feat_data_target_se = np.sqrt(
+                #     feat_data_target_perc * (1 - feat_data_target_perc)
+                # )
+
+                feat_data_target_se = feat_data_target_se.rename(binary_se_format.format(target=target))
+                print(feat_data_target_se)
+                stats_dfs.append(feat_data_target_perc)
+                stats_dfs.append(feat_data_target_se)
+
+    elif target is not None and isinstance(target, list):
+        for target_y in target:
+            if "predicted_proba" in target_y:
+                target_rate_col = predicted_proba_format.format(target=target_y)
+                target_se_col = predicted_proba_se_format.format(target=target_y)
+            else:
+                target_rate_col = binary_perc_format.format(target=target_y)
+                target_se_col = binary_se_format.format(target=target_y)
+
+            feat_data_target_perc = feat_data.groupby("bin", observed=False)[target_y].mean().rename(target_rate_col)
 
             feat_data_target_se = z_value * np.sqrt(
-                (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts 
-            )
-
-            ## Formulae for bernoulli distribution standard deviation
-            # feat_data_target_se = np.sqrt(
-            #     feat_data_target_perc * (1 - feat_data_target_perc)
-            # )
-
-            feat_data_target_se = feat_data_target_se.rename(
-                binary_se_format.format(target=target)
-            )
-            print(feat_data_target_se)
+                (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts
+            ).rename(target_se_col)
             stats_dfs.append(feat_data_target_perc)
             stats_dfs.append(feat_data_target_se)
 
@@ -709,9 +725,7 @@ def classification_get_categorical_feature_stats_df(
         feat_data = data[[feat]].copy()
 
     feat_data_counts = feat_data[feat].value_counts(dropna=False).rename("counts")
-    feat_data_perc = (
-        feat_data[feat].value_counts(dropna=False, normalize=True).rename("perc")
-    )
+    feat_data_perc = feat_data[feat].value_counts(dropna=False, normalize=True).rename("perc")
 
     stats_dfs = [feat_data_counts, feat_data_perc]
     # target counts and stats
@@ -733,21 +747,17 @@ def classification_get_categorical_feature_stats_df(
                 # )
 
                 feat_data_target_se = z_value * np.sqrt(
-                    (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts 
+                    (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts
                 )
-                                
-                feat_data_target_se= feat_data_target_se.rename(
-                    multiclass_se_format.format(target=target, lab=lab)
-                )
+
+                feat_data_target_se = feat_data_target_se.rename(multiclass_se_format.format(target=target, lab=lab))
 
                 stats_dfs.append(feat_data_target_perc)
                 stats_dfs.append(feat_data_target_se)
 
         else:
             feat_data_target_perc = (
-                feat_data.groupby(feat, observed=False)[target]
-                .mean()
-                .rename(binary_perc_format.format(target=target))
+                feat_data.groupby(feat, observed=False)[target].mean().rename(binary_perc_format.format(target=target))
             )
             # feat_data_target_se = (
             #     feat_data.groupby(feat, observed=False)[target]
@@ -759,9 +769,7 @@ def classification_get_categorical_feature_stats_df(
             feat_data_target_se = z_value * np.sqrt(
                 (feat_data_target_perc * (1 - feat_data_target_perc)) / feat_data_counts
             )
-            feat_data_target_se = feat_data_target_se.rename(
-                binary_se_format.format(target=target)
-            )
+            feat_data_target_se = feat_data_target_se.rename(binary_se_format.format(target=target))
 
             stats_dfs.append(feat_data_target_perc)
             stats_dfs.append(feat_data_target_se)
@@ -775,27 +783,22 @@ def classification_get_categorical_feature_stats_df(
 def check(**kwargs):
     feat = kwargs.get("feat", None)
     target = kwargs.get("target", None)
-    if all([i is not None for i in [feat, target]]):
+    if all(i is not None for i in [feat, target]):
         assert feat != target, f"feat `{feat}` is the same as target `{target}`"
 
     data = kwargs.get("data", None)
-    assert (
-        data is not None
-    ), f"parameter `data` must be supplied as parameters. got data `{data}`"
-    assert isinstance(
-        data, pd.DataFrame
-    ), f"parameter `data` must be of type `{pd.DataFrame}`, got `{type(data)}`"
+    assert data is not None, f"parameter `data` must be supplied as parameters. got data `{data}`"
+    assert isinstance(data, pd.DataFrame), f"parameter `data` must be of type `{pd.DataFrame}`, got `{type(data)}`"
 
     nbins = kwargs.get("nbins", None)
-    assert isinstance(
-        nbins, int
-    ), f"parameter `nbins` must be of type `{int}`, got `{type(nbins)}`"
+    assert isinstance(nbins, int), f"parameter `nbins` must be of type `{int}`, got `{type(nbins)}`"
 
 
 def plot_numerical_feature_distribution(
     data,
     feat,
     target,
+    extra_targets: Optional[List] = None,
     nbins=10,
     equal_quantiles=True,
     error_bars=False,
@@ -816,29 +819,39 @@ def plot_numerical_feature_distribution(
     """
 
     if mode == "classification":
-        feat_data_plot_df = classification_get_numerical_feature_stats_df(
-            data, feat, target=target, nbins=nbins, equal_quantiles=equal_quantiles, breaks=breaks
-        )
-
-        if data[target].nunique() == 2:
+        # if there are special arugments
+        if data[target].nunique() == 2 and extra_targets is not None and len(extra_targets) > 0:
+            feat_data_plot_df = classification_get_numerical_feature_stats_df(
+                data,
+                feat,
+                target=[target] + extra_targets,
+                nbins=nbins,
+                equal_quantiles=equal_quantiles,
+                breaks=breaks,
+            )
             classification_plotly_plot_numerical_feature(
-                data, feat, target, feat_data_plot_df, error_bars=error_bars
+                data, feat, [target] + extra_targets, feat_data_plot_df, error_bars=error_bars
             )
         else:
-            classification_multiclass_plotly_plot_numerical_feature(
-                data, feat, target, feat_data_plot_df, error_bars=error_bars
+            feat_data_plot_df = classification_get_numerical_feature_stats_df(
+                data, feat, target=target, nbins=nbins, equal_quantiles=equal_quantiles, breaks=breaks
             )
+            if data[target].nunique() == 2:
+                classification_plotly_plot_numerical_feature(
+                    data, feat, target, feat_data_plot_df, error_bars=error_bars
+                )
+
+            else:
+                classification_multiclass_plotly_plot_numerical_feature(
+                    data, feat, target, feat_data_plot_df, error_bars=error_bars
+                )
 
     elif mode == "regression":
         feat_data_plot_df = regression_get_numerical_feature_stats_df(
             data, feat, target=target, nbins=nbins, equal_quantiles=equal_quantiles, breaks=breaks
         )
-        regression_plotly_plot_numerical_feature(
-            data, feat, target, feat_data_plot_df, error_bars=error_bars
-        )
+        regression_plotly_plot_numerical_feature(data, feat, target, feat_data_plot_df, error_bars=error_bars)
     return feat_data_plot_df
-
-
 
 
 def plot_categorical_feature_distribution(
@@ -900,9 +913,7 @@ def plot_categorical_feature_distribution(
                 feat,
                 target,
             )
-            regression_plotly_plot_numerical_feature(
-                data, feat, target, feat_data_plot_df, error_bars=error_bars
-            )
+            regression_plotly_plot_numerical_feature(data, feat, target, feat_data_plot_df, error_bars=error_bars)
     except Exception as e:
         logger.info(e)
         traceback.print_exc()

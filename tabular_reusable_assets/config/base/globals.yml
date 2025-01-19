@@ -1,0 +1,11 @@
+s3_bucket: s3_bucket
+project_name: project_name
+business_objective: business_objective
+env: 'prd'
+version: 0.0.1-beta
+
+templates:
+    model_training_input_path: "s3://{s3_bucket}/{project_name}/{business_objective}/dataprocessing/training/model_input/{env}/{version}/{date}/model_input_data.parquet"
+    model_inference_input_path: "s3://{s3_bucket}/{project_name}/{business_objective}/dataprocessing/inference/model_input/{env}/{version}/{date}/inference_input_data.parquet"
+    saved_model_path: "s3://{s3_bucket}/{project_name}/{business_objective}/modelling/trained_model/{env}/{version}/{date}/saved_model.pickle"
+    model_inference_output_path: "s3://{s3_bucket}/{project_name}/{business_objective}/inference/model_output/{env}/{version}/{date}/inference_output.parquet"

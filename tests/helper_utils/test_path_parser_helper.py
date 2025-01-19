@@ -28,3 +28,18 @@ def test_get_dir_before_date_with_custom_regex():
         dir_before_date
         == "s3://{s3_bucket}/{project_name}/{business_objective}/dataprocessing/training/model_input/{env}/{version}/"
     )
+
+
+def test_get_latest_file():
+    files = [
+        "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2021-01-18/model_input_data.parquet",
+        "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2022-01-18/model_input_data.parquet",
+        "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/lolthisthing/model_input_data.parquet",
+        "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2025-01-18/model_input_data.parquet",
+    ]
+
+    latest_file = PathParser.get_latest_file(files, date_regex=r".*(\d{4}-\d{2}-\d{2}).*")
+    assert (
+        latest_file
+        == "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2025-01-18/model_input_data.parquet"
+    )

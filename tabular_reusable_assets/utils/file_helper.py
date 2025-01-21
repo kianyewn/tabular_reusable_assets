@@ -44,6 +44,10 @@ class FileHelper:
         """Check if file exists."""
         return Path(filepath).exists()
 
+    @staticmethod
+    def make_parent_dir_exist_ok(filepath) -> bool:
+        return Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+
     @classmethod
     def print_dir_tree_helper(
         cls,

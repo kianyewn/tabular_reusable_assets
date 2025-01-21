@@ -38,8 +38,25 @@ def test_get_latest_file():
         "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2025-01-18/model_input_data.parquet",
     ]
 
-    latest_file = FileHelper.get_latest_file(files, date_regex=r".*(\d{4}-\d{2}-\d{2}).*")
+    latest_file = FileHelper.get_latest_file_from_filepaths(files, date_regex=r".*(\d{4}-\d{2}-\d{2}).*")
     assert (
         latest_file
         == "s3://s3_bucket/project_name/business_objective/dataprocessing/training/model_input/dev/v0/2025-01-18/model_input_data.parquet"
     )
+
+
+def test_replace_date_in_path():
+    # Test with replacement date
+    path = "data/2025-01-01/train.csv"
+    assert FileHelper.replace_date_in_path(path, "2024-12-31") == "data/2024-12-31/train.csv"
+
+    # Test with no replacement (should return original)
+    assert FileHelper.replace_date_in_path(path) == path
+
+    # Test with no date in path
+    path_no_date = "data/train.csv"
+    assert FileHelper.replace_date_in_path(path_no_date, "2024-12-31") == path_no_date
+
+    # Test with multiple dates
+    path_multiple = "data/2025-01-01/2024-12-31/train.csv"
+    assert FileHelper.replace_date_in_path(path_multiple, "2023-06-30") == "data/2023-06-30/2023-06-30/train.csv"

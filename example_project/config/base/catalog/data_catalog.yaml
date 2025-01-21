@@ -1,0 +1,23 @@
+# RAW
+train_raw:
+  dataset:
+    KIND: PandasCSVDataset
+    path: example_project/data/01_raw/train.csv
+
+test_raw:
+  dataset:
+    KIND: PandasCSVDataset
+    path: example_project/data/01_raw/test.csv
+
+# PROCESSED
+train_processed:
+  dataset:
+    KIND: PandasCSVDataset
+    path: example_project/data/02_processed/train_processed.csv
+    write_args:
+      index: false
+
+test_processed:
+  dataset:
+    KIND: PandasCSVDataset
+    path: example_project/data/02_processed/test_processed.csv

@@ -45,20 +45,48 @@ class FileHelperBase:
         """Get file name."""
         return Path(filepath).name
 
+    @staticmethod
+    def iterdir(path: str | Path) -> List[Path]:
+        """Iterate over directory.
+        [PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/metrics'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/feature_analysis'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/config'),
+        """
+        return list(Path(path).resolve().iterdir())
+
+    @classmethod
+    def iter_dir_with_ignore(cls, path: str | Path, ignore: List[str]) -> List[Path]:
+        """Iterate over directory with ignore."""
+        return [p for p in cls.iterdir(path) if p.name not in ignore]
+
     def get_dir_before_date(file_path, date_regex=r"\d{4}-\d{2}-\d{2}"):
-        pattern = rf".*?(?={date_regex})"
+        pattern = rf".*(?={date_regex})"
         # print(pattern)
         match = re.search(pattern, file_path)
         return match.group(0)
 
-    def get_latest_file(file_paths: List, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
+    @staticmethod
+    def get_latest_file_from_filepaths(file_paths: List, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
         sorted_files = [
             (match.group(1), match.group(0))
-            for match in (re.match(date_regex, file) for file in file_paths)
+            for match in (re.match(date_regex, str(file)) for file in file_paths)
             if match is not None
         ]
+        if len(sorted_files) == 0:
+            raise ValueError(f"No files with date_regex `{date_regex}`found.")
         latest_file = sorted(sorted_files, key=lambda x: x[0])[-1][1]
         return latest_file
+
+    @classmethod
+    def get_latest_file(cls, filepath: str, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
+        dir_before_date = cls.get_dir_before_date(filepath, date_regex)
+        logger.info(dir_before_date)
+        # filepaths_with_date = cls.iterdir(dir_before_date)
+        filename = cls.get_file_name(filepath)
+        filepaths_with_date = Path(dir_before_date).rglob(
+            filename
+        )  # find all the files that have the filename recursively
+        return cls.get_latest_file_from_filepaths(filepaths_with_date, date_regex=date_regex)
 
 
 class FileHelper(FileHelperBase):
@@ -98,20 +126,6 @@ class FileHelper(FileHelperBase):
     @staticmethod
     def make_parent_dir_exist_ok(filepath) -> bool:
         return Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-
-    @staticmethod
-    def iterdir(path: str | Path) -> List[Path]:
-        """Iterate over directory.
-        [PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/metrics'),
-        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/feature_analysis'),
-        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/config'),
-        """
-        return list(Path(path).resolve().iterdir())
-
-    @staticmethod
-    def iter_dir_with_ignore(self, path: str | Path, ignore: List[str]) -> List[Path]:
-        """Iterate over directory with ignore."""
-        return [p for p in self.iterdir(path) if p.name not in ignore]
 
     @classmethod
     def print_dir_tree_helper(

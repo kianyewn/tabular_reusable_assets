@@ -24,9 +24,9 @@ class PandasParquetDataset(Reader, Writer):
         self._read_args.update(read_args)
         return pd.read_parquet(self.path, **self._read_args)
 
-    def write(self, data: pd.DataFrame, index: bool = False, **write_args):
+    def write(self, data: pd.DataFrame, **write_args):
         self._write_args.update(write_args)
-        return data.to_parquet(self.path, index=index, **self._write_args)
+        return data.to_parquet(self.path, **self._write_args)
 
 
 class PandasCSVDataset(Reader, Writer):
@@ -43,9 +43,9 @@ class PandasCSVDataset(Reader, Writer):
         self._read_args.update(read_args)
         return pd.read_csv(self.path, **self._read_args)
 
-    def write(self, data: pd.DataFrame, index: bool = False, **write_args):
+    def write(self, data: pd.DataFrame, **write_args):
         self._write_args.update(write_args)
-        return data.to_csv(self.path, index=index, **self._write_args)
+        return data.to_csv(self.path, **self._write_args)
 
 
 class SnowflakeDataset(Reader, Writer):

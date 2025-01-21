@@ -34,6 +34,16 @@ class FileHelper:
         else:
             logger.info("File does not exist.")
 
+    @staticmethod
+    def is_parent_dir_exist(filepath) -> bool:
+        """Check if parent directory exists."""
+        return Path(filepath).parent.exists()
+
+    @staticmethod
+    def is_file_exist(filepath) -> bool:
+        """Check if file exists."""
+        return Path(filepath).exists()
+
     @classmethod
     def print_dir_tree_helper(
         cls,
@@ -176,7 +186,7 @@ class PathParser:
         return Path(filepath).suffix
 
     @property
-    def get_directory(filepath) -> Path:
+    def get_parent_dir(filepath) -> Path:
         """Get parent directory."""
         return Path(filepath).parent
 
@@ -208,3 +218,12 @@ class PathParser:
         # print(pattern)
         match = re.search(pattern, file_path)
         return match.group(0)
+
+    def get_latest_file(file_paths: List, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
+        sorted_files = [
+            (match.group(1), match.group(0))
+            for match in (re.match(date_regex, file) for file in file_paths)
+            if match is not None
+        ]
+        latest_file = sorted(sorted_files, key=lambda x: x[0])[-1][1]
+        return latest_file

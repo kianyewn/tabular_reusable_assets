@@ -7,7 +7,61 @@ from typing import Dict, List, Optional, Tuple
 from loguru import logger
 
 
-class FileHelper:
+class FileHelperBase:
+    """Utility class for parsing file paths."""
+
+    @staticmethod
+    def get_absolute_path(filepath: str | Path) -> Path:
+        """Get absolute path."""
+        return Path(filepath).resolve()
+
+    @staticmethod
+    def get_base_name(filepath: str | Path) -> str:
+        """Get file name without extension."""
+        return Path(filepath).stem
+
+    @staticmethod
+    def get_extensions(filepath: str | Path) -> List[str]:
+        """Get all extensions."""
+        return Path(filepath).suffixes
+
+    @staticmethod
+    def get_extension(filepath: str | Path) -> str:
+        """Get primary extension."""
+        return Path(filepath).suffix
+
+    @property
+    def get_parent_dir(filepath) -> Path:
+        """Get parent directory."""
+        return Path(filepath).parent
+
+    @staticmethod
+    def get_path_without_extension(filepath: str | Path) -> Path:
+        """Get path without extension."""
+        return Path(filepath).with_suffix("")
+
+    @staticmethod
+    def get_file_name(filepath: str | Path) -> str:
+        """Get file name."""
+        return Path(filepath).name
+
+    def get_dir_before_date(file_path, date_regex=r"\d{4}-\d{2}-\d{2}"):
+        pattern = rf".*?(?={date_regex})"
+        # print(pattern)
+        match = re.search(pattern, file_path)
+        return match.group(0)
+
+    def get_latest_file(file_paths: List, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
+        sorted_files = [
+            (match.group(1), match.group(0))
+            for match in (re.match(date_regex, file) for file in file_paths)
+            if match is not None
+        ]
+        latest_file = sorted(sorted_files, key=lambda x: x[0])[-1][1]
+        return latest_file
+
+
+class FileHelper(FileHelperBase):
     IGNORE_FOLDERS = [
         ".DS_Store",
         ".git",
@@ -20,9 +74,6 @@ class FileHelper:
     BRANCH = "│   "
     TEE = "├── "
     LAST = "└── "
-
-    def __init__(self):
-        self.pp = PathParser()
 
     @staticmethod
     def remove_file(filepath: str) -> None:
@@ -47,6 +98,20 @@ class FileHelper:
     @staticmethod
     def make_parent_dir_exist_ok(filepath) -> bool:
         return Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def iterdir(path: str | Path) -> List[Path]:
+        """Iterate over directory.
+        [PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/metrics'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/feature_analysis'),
+        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/config'),
+        """
+        return list(Path(path).resolve().iterdir())
+
+    @staticmethod
+    def iter_dir_with_ignore(self, path: str | Path, ignore: List[str]) -> List[Path]:
+        """Iterate over directory with ignore."""
+        return [p for p in self.iterdir(path) if p.name not in ignore]
 
     @classmethod
     def print_dir_tree_helper(
@@ -164,70 +229,3 @@ class FileHelper:
 
         print("\n".join(dfs(Path(root))))
         return
-
-
-class PathParser:
-    """Utility class for parsing file paths."""
-
-    @staticmethod
-    def get_absolute_path(filepath: str | Path) -> Path:
-        """Get absolute path."""
-        return Path(filepath).resolve()
-
-    @staticmethod
-    def get_base_name(filepath: str | Path) -> str:
-        """Get file name without extension."""
-        return Path(filepath).stem
-
-    @staticmethod
-    def get_extensions(filepath: str | Path) -> List[str]:
-        """Get all extensions."""
-        return Path(filepath).suffixes
-
-    @staticmethod
-    def get_extension(filepath: str | Path) -> str:
-        """Get primary extension."""
-        return Path(filepath).suffix
-
-    @property
-    def get_parent_dir(filepath) -> Path:
-        """Get parent directory."""
-        return Path(filepath).parent
-
-    @staticmethod
-    def get_path_without_extension(filepath: str | Path) -> Path:
-        """Get path without extension."""
-        return Path(filepath).with_suffix("")
-
-    @staticmethod
-    def get_file_name(filepath: str | Path) -> str:
-        """Get file name."""
-        return Path(filepath).name
-
-    @staticmethod
-    def iterdir(path: str | Path) -> List[Path]:
-        """Iterate over directory.
-        [PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/metrics'),
-        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/feature_analysis'),
-        PosixPath('/Users/kianyewngieng/github_projects/tabular_reusable_assets/tabular_reusable_assets/config'),
-        """
-        return list(Path(path).resolve().iterdir())
-
-    def iter_dir_with_ignore(self, path: str | Path, ignore: List[str]) -> List[Path]:
-        """Iterate over directory with ignore."""
-        return [p for p in self.iterdir(path) if p.name not in ignore]
-
-    def get_dir_before_date(file_path, date_regex=r"\d{4}-\d{2}-\d{2}"):
-        pattern = rf".*?(?={date_regex})"
-        # print(pattern)
-        match = re.search(pattern, file_path)
-        return match.group(0)
-
-    def get_latest_file(file_paths: List, date_regex=r".*(\d{4}-\d{2}-\d{2}/.*)"):
-        sorted_files = [
-            (match.group(1), match.group(0))
-            for match in (re.match(date_regex, file) for file in file_paths)
-            if match is not None
-        ]
-        latest_file = sorted(sorted_files, key=lambda x: x[0])[-1][1]
-        return latest_file

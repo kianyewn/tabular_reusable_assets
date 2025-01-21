@@ -30,8 +30,8 @@ class FileHelperBase:
         """Get primary extension."""
         return Path(filepath).suffix
 
-    @property
-    def get_parent_dir(filepath) -> Path:
+    @classmethod
+    def get_parent_dir(cls, filepath) -> Path:
         """Get parent directory."""
         return Path(filepath).parent
 
@@ -242,4 +242,35 @@ class FileHelper(FileHelperBase):
             return current_tree
 
         print("\n".join(dfs(Path(root))))
+        return
+
+    @staticmethod
+    def replace_date_in_path(path: str, replacement_date: Optional[str] = None, regex: Optional[str] = None) -> str:
+        """Replace date pattern (YYYY-MM-DD) in a file path with a replacement date.
+
+        Args:
+            path: File path containing a date pattern
+            replacement_date: Date string to replace with. If None, keeps original date.
+
+        Returns:
+            Updated file path with replaced date
+
+        Examples:
+            >>> replace_date_in_path("data/2025-01-01/train.csv", "2024-12-31")
+            'data/2024-12-31/train.csv'
+
+            >>> replace_date_in_path("data/2025-01-01/train.csv")
+            'data/2025-01-01/train.csv'
+        """
+        if replacement_date is None:
+            return path
+
+        date_pattern = r"\d{4}-\d{2}-\d{2}" if regex is None else regex
+        return re.sub(date_pattern, replacement_date, path)
+
+    @classmethod
+    def try_mkdir(cls, dataset_path: str):
+        if not cls.is_parent_dir_exist(dataset_path):
+            Path(dataset_path).parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Creating parent directory: {cls.get_parent_dir(dataset_path)}")
         return

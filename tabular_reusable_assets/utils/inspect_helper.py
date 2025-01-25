@@ -1,4 +1,5 @@
 import inspect
+from functools import partial
 from typing import Callable
 
 
@@ -145,6 +146,7 @@ def get_empty_keyword_only_parameters(func: Callable):
         if is_keyword_only(param) and is_empty(param)
     ]
 
+
 def get_var_keyword_name(func: Callable):
     """Get var keyword name.
 
@@ -167,6 +169,21 @@ def get_var_positional_name(func: Callable):
         list: List of var positional name.
     """
     return [name for name, param in inspect.signature(func).parameters.items() if param.kind == param.VAR_POSITIONAL]
+
+
+def get_partial_function(partial_func: partial):
+    """Get non empty arguments and all parameters from a partial function.
+
+    Args:
+        partial_func (partial): Partial function to get non empty arguments and all parameters.
+
+    Returns:
+        tuple: Tuple of non empty arguments and all parameters.
+    """
+    # p = partial(lambda a, b: a > b, {"a": 1})
+    non_empty_args = partial_func.args  # ({'a': 1},)
+    all_parameters = partial_func.func.__code__.co_varnames  # ('a', 'b')
+    return non_empty_args, all_parameters
 
 
 if __name__ == "__main__":

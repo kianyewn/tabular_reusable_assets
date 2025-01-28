@@ -1,0 +1,7 @@
+stages:
+  - print
+
+hello_world:
+  stage: print
+  script:
+    - echo "Hello, GitLab CI/CD!"

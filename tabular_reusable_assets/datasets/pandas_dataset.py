@@ -1,6 +1,7 @@
 import typing as T
 
 import pandas as pd
+from pydantic import Field
 
 from tabular_reusable_assets.datasets.core import Reader, Writer
 
@@ -9,7 +10,7 @@ from .datasets_utils import TemplateFormatter
 
 class PandasParquetDataset(Reader, Writer):
     KIND: T.Literal["PandasParquetDataset"] = "PandasParquetDataset"
-    path: str
+    path: str = Field(..., frozen=False)
     read_args: T.Dict[str, T.Any] = None
     write_args: T.Dict[str, T.Any] = None
     template: str = None
@@ -31,7 +32,7 @@ class PandasParquetDataset(Reader, Writer):
 
 class PandasCSVDataset(Reader, Writer):
     KIND: T.Literal["PandasCSVDataset"] = "PandasCSVDataset"
-    path: str
+    path: str = Field(..., frozen=False)
     read_args: T.Dict[str, T.Any] = None
     write_args: T.Dict[str, T.Any] = None
 

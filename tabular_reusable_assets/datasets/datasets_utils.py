@@ -1,7 +1,11 @@
+import string
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
-from typing import Callable, Union
+from typing import Callable, Dict, List, Union
+
+from loguru import logger
+from pydantic import BaseModel, Field
 
 
 class KedroPathTemplates:
@@ -127,11 +131,11 @@ class PathBuilder:
     def build(
         self,
         path_template: str,
-        filename: str=None,
+        filename: str = None,
         env: str = None,
         date: str = None,
         version: str = None,
-        **kwargs
+        **kwargs,
     ):
         """Builds the path for the model training input.
 
@@ -155,12 +159,51 @@ class PathBuilder:
             version=version,
             date=date,
             filename=filename,
-            **kwargs
+            **kwargs,
         )
 
     def build_path(self, template_key: str, **kwargs):
         path_template = getattr(self, template_key)
         return path_template.format(**kwargs)
+
+
+class TemplateFormatter(BaseModel):
+    template: str
+    config: Dict[str, str] = {}
+    remaining_parameters: List[str] = Field(default_factory=list)
+
+    def get_required_parameters(self):
+        return [
+            field_name
+            for _, field_name, _, _ in list(string.Formatter().parse(self.template))
+            if field_name is not None
+        ]
+
+    def format(self, **kwargs):
+        if isinstance(self.template, partial):
+            return self.template(**{key: kwargs[key] for key in self.remaining_parameters})
+        required_parameters = self.get_required_parameters()
+        kwargs = {key: kwargs[key] for key in required_parameters if key in kwargs}
+        kwargs_global = {
+            key: self.config[key] for key in required_parameters if key not in kwargs and key in self.config
+        }
+        remainder_args = [key for key in required_parameters if key not in kwargs_global and key not in kwargs]
+        if len(remainder_args) > 0:
+            raise ValueError(f"The following parameters are required but not provided: {remainder_args}")
+        kwargs.update(kwargs_global)
+        return self.template.format(**kwargs)
+
+    def partial_format(self, **kwargs):
+        required_parameters = self.get_required_parameters()
+        global_kwargs = {key: self.config[key] for key in required_parameters if key in self.config}
+        required_kwargs = {key: kwargs[key] for key in required_parameters if key in kwargs}
+        required_kwargs = {**global_kwargs, **required_kwargs}  # kwargs override global kwargs
+        non_kwargs = {key for key in kwargs if key not in required_parameters}
+        if len(non_kwargs) > 0:
+            logger.warning(f"The following parameters are not required: {non_kwargs}")
+        self.template = partial(self.template.format, **required_kwargs)
+        self.remaining_parameters = [key for key in required_parameters if key not in required_kwargs]
+        return self
 
 
 if __name__ == "__main__":

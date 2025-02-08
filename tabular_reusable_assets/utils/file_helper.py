@@ -2,8 +2,9 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Generator, List, Optional, Tuple
 
+import joblib
 from loguru import logger
 
 
@@ -274,3 +275,16 @@ class FileHelper(FileHelperBase):
             Path(dataset_path).parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"Creating parent directory: {cls.get_parent_dir(dataset_path)}")
         return
+
+    @classmethod
+    def glob_files(cls, path: str, pattern: str) -> Generator[Path, None, None]:
+        for path in Path(path).rglob(pattern):
+            yield path
+
+    @staticmethod
+    def load_dict(path):
+        return joblib.load(path)
+
+    @staticmethod
+    def save_dict(data, path):
+        return joblib.dump(data, path)

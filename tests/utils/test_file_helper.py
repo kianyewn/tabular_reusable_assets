@@ -1,3 +1,6 @@
+from pathlib import Path
+from unittest.mock import patch
+
 from tabular_reusable_assets.utils.file_helper import FileHelper
 
 
@@ -60,3 +63,29 @@ def test_replace_date_in_path():
     # Test with multiple dates
     path_multiple = "data/2025-01-01/2024-12-31/train.csv"
     assert FileHelper.replace_date_in_path(path_multiple, "2023-06-30") == "data/2023-06-30/2023-06-30/train.csv"
+
+
+@patch("tabular_reusable_assets.utils.file_helper.Path")
+def test_glob_files(mock_path):
+    # Setup mock paths to be returned
+    mock_paths = [Path("data/file1.csv"), Path("data/file2.csv")]
+    mock_path.return_value.rglob.return_value = mock_paths
+    files = FileHelper.glob_files("data", "*.csv")
+    assert len(list(files)) == 2
+
+
+@patch("tabular_reusable_assets.utils.file_helper.joblib.load")
+def test_load_dict(mock_joblib):
+    dummy_expected = {"hello": "world"}
+    mock_joblib.return_value = dummy_expected
+
+    return_dummy = FileHelper.load_dict("Helo World")
+    assert return_dummy == dummy_expected
+    mock_joblib.assert_called_once_with("Helo World")
+
+
+@patch("tabular_reusable_assets.utils.file_helper.joblib.dump")
+def test_save_dict(mock_joblib):
+    dummy = {"hello": "world"}
+    FileHelper.save_dict(dummy, "Hello World")
+    mock_joblib.assert_called_once_with(dummy, "Hello World")

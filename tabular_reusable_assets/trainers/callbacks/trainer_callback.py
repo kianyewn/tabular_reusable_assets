@@ -77,9 +77,7 @@ class TrainerCallback(ABC):
 
 class ExportableState:
     def state(self) -> dict:
-        raise NotImplementedError(
-            "You msut implement a `state` function to utilize this class"
-        )
+        raise NotImplementedError("You msut implement a `state` function to utilize this class")
 
     @classmethod
     def set_state(cls, state: dict):
@@ -152,9 +150,7 @@ class TrainerState:
 
             self.stateful_callbacks = stateful_callbacks
 
-    def update_best_metrics(
-        self, current_loss: float, current_score: float, model_path: str
-    ) -> None:
+    def update_best_metrics(self, current_loss: float, current_score: float, model_path: str) -> None:
         """Update best metrics and return true if improved"""
         improved = False
 
@@ -253,6 +249,7 @@ class DefaultFlowCallback(TrainerCallback):
     """DefualtFlowCallback should only happen at step_end and epoch_end. You will not code step_start.
     Essentially you check if you want to log, evaluate, save, only at the end of the step and epoch.
     """
+
     def on_step_end(
         self,
         args: TrainingArguments,
@@ -261,34 +258,27 @@ class DefaultFlowCallback(TrainerCallback):
         **kwargs,
     ):
         # Log
-        if (
-            args.logging_strategy == IntervalStrategy.STEPS
-            and (state.global_step % args.logging_steps) == 0
-        ):
+        if args.logging_strategy == IntervalStrategy.STEPS and (state.global_step % args.logging_steps) == 0:
             control.should_log = True
 
         # Evaluate
-        if args.eval_strategy == IntervalStrategy.STEPS and (
-            state.global_step % args.eval_steps == 0
-        ):
+        if args.eval_strategy == IntervalStrategy.STEPS and (state.global_step % args.eval_steps == 0):
             control.should_evaluate = True
 
         # Save
-        if args.save_strategy == SaveStrategy.STEPS and (
-            state.global_step % args.save_steps == 0
-        ):
+        if args.save_strategy == SaveStrategy.STEPS and (state.global_step % args.save_steps == 0):
             control.should_save = True
 
         # End training
         if state.global_step >= args.max_steps and args.max_steps > 0:
-            logger.info(f'Training stopped by max_steps. {state.global_step} / {args.max_steps}')
+            logger.info(f"Training stopped by max_steps. {state.global_step} / {args.max_steps}")
             control.should_training_stop = True
             # Save the model at the end if we have a save strategy
             if args.save_strategy not in [SaveStrategy.NO, SaveStrategy.BEST]:
                 control.should_save = True
 
         return control
-        
+
     def on_epoch_end(
         self,
         args: TrainingArguments,
@@ -318,9 +308,7 @@ class ProgressCallback(TrainerCallback):
         control: TrainerControl,
         **kwargs,
     ):
-        self.training_bar = tqdm(
-            total=state.max_steps, dynamic_ncols=True, leave=True, position=0
-        )
+        self.training_bar = tqdm(total=state.max_steps, dynamic_ncols=True, leave=True, position=0)
         self.current_step = 0
 
     def on_step_end(
